@@ -1,0 +1,21 @@
+---
+layout: default
+---
+
+<article class="post parchment">
+  <header class="post-header">
+    <div class="scroll-ornament">&#10087; &#8226; &#10087;</div>
+    <h1 class="post-title">{{ page.title }}</h1>
+    <p class="post-meta">
+      记录于 {{ page.date | date: '%Y 年 %m 月 %d 日' }}
+    </p>
+  </header>
+
+  <div class="post-content">
+    {{ content }}
+  </div>
+
+  <footer class="post-footer">
+    <a href="{{ '/' | relative_url }}" class="back-link">&#10229; 返回营地</a>
+  </footer>
+</article>
