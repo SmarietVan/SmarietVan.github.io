@@ -8,6 +8,8 @@ const SITE_CONFIG = {
     repoOwner: "SmarietVan",
     repoName: "SmarietVan.github.io",
     branch: "main",
+    commentsRepo: "guestbook-comments",  // 评论以 issue 形式存这里
+    approvedLabel: "已通过",              // 打上此 label 的评论才公开展示
 };
 
 /* ---------- 通用工具 ---------- */
@@ -119,16 +121,16 @@ const Session = {
     login() {
         const { mask, close } = modal("站长登录（GitHub Token）", `
             <ol style="font-size:13px;color:var(--card-dim);line-height:2;padding-left:18px">
-                <li>打开 <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">GitHub 新建 fine-grained token</a></li>
-                <li>Repository access 选 <b>Only select repositories</b> → <b>${SITE_CONFIG.repoName}</b></li>
-                <li>Permissions → Contents 选 <b>Read and write</b></li>
+                <li>打开 <a href="https://github.com/settings/tokens/new" target="_blank" rel="noopener">GitHub 新建 token（classic）</a></li>
+                <li>Note 随便填，Expiration 建议 90 天</li>
+                <li>勾选 <b>public_repo</b> 这一个权限就够了</li>
                 <li>生成后把 token 粘贴到下面</li>
             </ol>
-            <input type="password" id="patInput" placeholder="github_pat_..." autocomplete="off">
+            <input type="password" id="patInput" placeholder="ghp_..." autocomplete="off">
             <div class="modal-actions" style="padding:14px 0 0;border:none">
                 <button class="btn-blue" id="patOk">验证并登录</button>
             </div>
-            <p style="font-size:12px;color:var(--card-dim);margin-top:10px">token 只保存在你自己的浏览器里，用于调用 GitHub API 发文，不会上传到任何第三方。</p>`);
+            <p style="font-size:12px;color:var(--card-dim);margin-top:10px">token 只保存在你自己的浏览器里，用于调用 GitHub API 发文和审核评论，不会上传到任何第三方。</p>`);
         mask.querySelector("#patOk").addEventListener("click", async () => {
             const v = mask.querySelector("#patInput").value.trim();
             if (!v) { toast("请先粘贴 token"); return; }
@@ -250,6 +252,87 @@ const Session = {
 };
 
 /* ============================================================
+   GitHub 评论体系
+   评论 = guestbook-comments 仓库的 issue（作者即 GitHub 用户名）
+   审核 = label「已通过」：没有该 label 的公开页面不展示
+   ============================================================ */
+const GhComments = {
+    apiBase() {
+        return `https://api.github.com/repos/${SITE_CONFIG.repoOwner}/${SITE_CONFIG.commentsRepo}`;
+    },
+
+    /* 某篇日志下已通过的评论（公开，无需登录） */
+    async approved(postId) {
+        const r = await fetch(`${this.apiBase()}/issues?state=open&labels=${encodeURIComponent(SITE_CONFIG.approvedLabel)}&per_page=100`);
+        if (!r.ok) return [];
+        const issues = await r.json();
+        return issues
+            .filter((i) => i.title.startsWith(`[${postId}]`))
+            .map((i) => ({
+                n: i.number,
+                author: i.user.login,
+                avatar: i.user.avatar_url,
+                url: i.user.html_url,
+                text: i.body || "",
+                time: i.created_at.slice(0, 16).replace("T", " "),
+            }))
+            .sort((a, b) => a.time.localeCompare(b.time));
+    },
+
+    /* 待审核 = open 且没有「已通过」label（站长用） */
+    async pending() {
+        const r = await fetch(`${this.apiBase()}/issues?state=open&per_page=100`, {
+            headers: Session._headers(),
+        });
+        if (!r.ok) return null;
+        const issues = await r.json();
+        return issues.filter((i) => !i.labels.some((l) => l.name === SITE_CONFIG.approvedLabel));
+    },
+
+    /* 已通过列表（站长用） */
+    async approvedAll() {
+        const r = await fetch(`${this.apiBase()}/issues?state=open&labels=${encodeURIComponent(SITE_CONFIG.approvedLabel)}&per_page=100`, {
+            headers: Session._headers(),
+        });
+        if (!r.ok) return null;
+        return r.json();
+    },
+
+    async approve(n) {
+        const r = await fetch(`${this.apiBase()}/issues/${n}/labels`, {
+            method: "POST",
+            headers: Session._headers(),
+            body: JSON.stringify({ labels: [SITE_CONFIG.approvedLabel] }),
+        });
+        return r.ok;
+    },
+
+    async revoke(n) {
+        const r = await fetch(`${this.apiBase()}/issues/${n}/labels/${encodeURIComponent(SITE_CONFIG.approvedLabel)}`, {
+            method: "DELETE",
+            headers: Session._headers(),
+        });
+        return r.ok;
+    },
+
+    async reject(n) {
+        const r = await fetch(`${this.apiBase()}/issues/${n}`, {
+            method: "PATCH",
+            headers: Session._headers(),
+            body: JSON.stringify({ state: "closed" }),
+        });
+        return r.ok;
+    },
+
+    /* 访客写评论：跳 GitHub 新建 issue（未登录会先引导登录） */
+    commentUrl(postId, postTitle) {
+        const t = encodeURIComponent(`[${postId}] ${postTitle.slice(0, 20)}`);
+        const b = encodeURIComponent("在这里写下你的评论……\n\n（提交后需站长审核通过才会展示）");
+        return `https://github.com/${SITE_CONFIG.repoOwner}/${SITE_CONFIG.commentsRepo}/issues/new?title=${t}&body=${b}`;
+    },
+};
+
+/* ============================================================
    仓库日志加载器（posts/*.md）
    本地预览：读 posts/index.json + 相对路径
    线上：GitHub API 列目录 + raw.githubusercontent 读内容
@@ -355,12 +438,12 @@ async function pageHome() {
                 <span class="views">浏览${meta.views}次</span>
                 <span class="actions">
                     <button class="act like-btn ${liked ? "liked" : ""}">👍 <i>${meta.likes}</i></button>
-                    <a class="act" href="post.html?id=${encodeURIComponent(p.id)}#comments" title="评论">💬 ${meta.comments.length}</a>
+                    <a class="act" href="post.html?id=${encodeURIComponent(p.id)}#comments" title="评论">💬</a>
                     <button class="act share-btn" title="分享">↗</button>
                 </span>
             </div>
             <div class="like-list ${liked ? "" : "hidden"}">👍 <b>你</b> 觉得很赞</div>
-            <div class="comment-box"><input type="text" placeholder="评论" maxlength="200"><span class="cam">📷</span></div>
+            <a class="comment-box comment-entry" href="post.html?id=${encodeURIComponent(p.id)}#comments">💬 来评论区坐坐（GitHub 账号评论）</a>
         </article>`;
     }).join("");
 
@@ -383,16 +466,6 @@ async function pageHome() {
             (navigator.clipboard?.writeText(url) || Promise.reject())
                 .then(() => toast("链接已复制，快去分享吧"))
                 .catch(() => toast("分享链接：" + url));
-        });
-
-        const input = el.querySelector(".comment-box input");
-        input.addEventListener("keydown", (e) => {
-            if (e.key !== "Enter" || !input.value.trim()) return;
-            Store.addComment(id, "你", input.value.trim());
-            input.value = "";
-            toast("评论成功");
-            const cbtn = el.querySelector('a.act[href^="post.html"]');
-            if (cbtn) cbtn.textContent = `💬 ${meta.comments.length}`;
         });
     });
 }
@@ -450,7 +523,6 @@ async function pageBlog() {
                     <span>${esc(p.time)}</span>
                     <span>分类：${esc(p.cate)}</span>
                     <span>阅读 ${meta.views}</span>
-                    <span>评论 ${meta.comments.length}</span>
                     ${ops}
                 </div>
             </li>`;
@@ -810,24 +882,34 @@ async function pagePost() {
                 </span>
             </div>
             <div class="pd-comments" id="comments">
-                <div class="pd-comments-title">评论（${meta.comments.length}）</div>
-                <div id="commentList">
-                    ${meta.comments.length ? meta.comments.map((c) => `
-                        <div class="comment-item">
-                            <span class="ci-avatar">${avatarOf(c.name)}</span>
-                            <div class="ci-body">
-                                <span class="ci-name">${esc(c.name)}<span class="ci-time">${esc(c.time)}</span></span>
-                                <div class="ci-text">${esc(c.text)}</div>
-                            </div>
-                        </div>`).join("")
-                      : '<div style="font-size:13px;color:var(--card-dim);padding:6px 0">还没有评论，来抢沙发～</div>'}
-                </div>
+                <div class="pd-comments-title">评论</div>
+                <div id="commentList"><div class="comment-loading">正在读取评论……</div></div>
                 <div class="comment-form">
-                    <input type="text" id="cName" placeholder="你的昵称" maxlength="20">
-                    <textarea id="cText" placeholder="写下你的评论……" maxlength="500"></textarea>
-                    <button class="btn-blue" id="cSubmit">发表评论</button>
+                    <a class="btn-blue" style="text-decoration:none;align-self:flex-start" target="_blank" rel="noopener"
+                       href="${GhComments.commentUrl(id, post.title)}">💬 用 GitHub 账号评论</a>
+                    <p class="comment-hint">评论会以你的 GitHub 用户名提交，站长审核通过后展示在这里</p>
                 </div>
             </div>`;
+
+        /* 异步加载已通过的评论 */
+        GhComments.approved(id).then((list) => {
+            const box = document.getElementById("commentList");
+            if (!box) return;
+            if (!list.length) {
+                box.innerHTML = '<div style="font-size:13px;color:var(--card-dim);padding:6px 0">还没有已通过的评论，来抢沙发～</div>';
+                return;
+            }
+            box.innerHTML = list.map((c) => `
+                <div class="comment-item">
+                    <img class="ci-avatar gh" src="${c.avatar}" alt="" loading="lazy">
+                    <div class="ci-body">
+                        <a class="ci-name" href="${c.url}" target="_blank" rel="noopener">${esc(c.author)}<span class="ci-time">${esc(c.time)}</span></a>
+                        <div class="ci-text">${esc(c.text)}</div>
+                    </div>
+                </div>`).join("");
+            const title = document.querySelector(".pd-comments-title");
+            if (title) title.textContent = `评论（${list.length}）`;
+        });
 
         document.getElementById("pdLike").addEventListener("click", (e) => {
             const likedNow = Liked.toggle(id);
@@ -861,15 +943,6 @@ async function pagePost() {
             });
         }
 
-        document.getElementById("cSubmit").addEventListener("click", () => {
-            const name = document.getElementById("cName").value.trim() || "匿名访客";
-            const text = document.getElementById("cText").value.trim();
-            if (!text) { toast("评论内容不能为空"); return; }
-            Store.addComment(id, name, text);
-            toast("评论成功");
-            render();
-            document.getElementById("comments").scrollIntoView({ behavior: "smooth" });
-        });
     }
 
     render();
@@ -1174,6 +1247,91 @@ function pageGuestbook() {
     render();
 }
 
+/* ============================================================
+   站长后台：评论审核（仅站长）
+   ============================================================ */
+async function pageAdmin() {
+    const box = document.getElementById("adminBody");
+    const loggedIn = await Session.check();
+
+    if (!loggedIn) {
+        box.innerHTML = `
+            <div class="empty-state">
+                这里是站长后台，仅站长可见<br><br>
+                <a id="adminLogin" style="cursor:pointer;color:var(--link)">站长登录</a>
+            </div>`;
+        document.getElementById("adminLogin").addEventListener("click", () => Session.login());
+        return;
+    }
+
+    let tab = "pending"; // pending | approved
+
+    function issueRow(i, actions) {
+        const m = /^\[(.+?)\]\s*(.*)$/.exec(i.title);
+        const postId = m ? m[1] : "";
+        return `
+        <li class="comment-item">
+            <img class="ci-avatar gh" src="${i.user.avatar_url}" alt="" loading="lazy">
+            <div class="ci-body">
+                <a class="ci-name" href="${i.user.html_url}" target="_blank" rel="noopener">${esc(i.user.login)}</a>
+                <span class="ci-time">${esc(i.created_at.slice(0, 16).replace("T", " "))}</span>
+                ${postId ? `<div class="admin-post-ref">评论于：<a href="post.html?id=${encodeURIComponent(postId)}" target="_blank">${esc(postId)}</a></div>` : ""}
+                <div class="ci-text">${esc(i.body || "")}</div>
+                <div class="admin-ops">${actions}</div>
+            </div>
+        </li>`;
+    }
+
+    async function render() {
+        box.innerHTML = `<div class="empty-state">加载中……</div>`;
+        if (tab === "pending") {
+            const list = await GhComments.pending();
+            if (!list) { box.innerHTML = `<div class="empty-state">读取失败，请重新登录</div>`; return; }
+            box.innerHTML = list.length
+                ? `<ul class="msg-list">${list.map((i) => issueRow(i,
+                    `<a data-approve="${i.number}">✅ 通过</a><a data-reject="${i.number}" class="danger">❌ 拒绝</a>`)).join("")}</ul>`
+                : `<div class="empty-state">没有待审核的评论，世界和平 🕊️</div>`;
+            box.querySelectorAll("[data-approve]").forEach((a) => {
+                a.addEventListener("click", async () => {
+                    if (await GhComments.approve(+a.dataset.approve)) { toast("已通过，现在公开可见"); render(); }
+                    else toast("操作失败");
+                });
+            });
+            box.querySelectorAll("[data-reject]").forEach((a) => {
+                a.addEventListener("click", async () => {
+                    if (!confirm("拒绝并关闭这条评论？")) return;
+                    if (await GhComments.reject(+a.dataset.reject)) { toast("已拒绝"); render(); }
+                    else toast("操作失败");
+                });
+            });
+        } else {
+            const list = await GhComments.approvedAll();
+            if (!list) { box.innerHTML = `<div class="empty-state">读取失败，请重新登录</div>`; return; }
+            box.innerHTML = list.length
+                ? `<ul class="msg-list">${list.map((i) => issueRow(i,
+                    `<a data-revoke="${i.number}" class="danger">撤下</a>`)).join("")}</ul>`
+                : `<div class="empty-state">还没有已通过审核的评论</div>`;
+            box.querySelectorAll("[data-revoke]").forEach((a) => {
+                a.addEventListener("click", async () => {
+                    if (await GhComments.revoke(+a.dataset.revoke)) { toast("已撤下（回到待审核）"); render(); }
+                    else toast("操作失败");
+                });
+            });
+        }
+    }
+
+    document.querySelectorAll(".ptab[data-atab]").forEach((t) => {
+        t.addEventListener("click", () => {
+            document.querySelectorAll(".ptab[data-atab]").forEach((x) => x.classList.remove("active"));
+            t.classList.add("active");
+            tab = t.dataset.atab;
+            render();
+        });
+    });
+
+    render();
+}
+
 /* ---------- 启动 ---------- */
 Session.init();
 
@@ -1192,6 +1350,12 @@ Session.init();
     a.textContent = "站长入口";
     a.style.cssText = "margin-left:12px;opacity:.6";
     f.appendChild(a);
+    const admin = document.createElement("a");
+    admin.href = "admin.html";
+    admin.textContent = "评论审核";
+    admin.className = "owner-only";
+    admin.style.cssText = "margin-left:12px";
+    f.appendChild(admin);
 })();
 
 /* ---------- 背景音乐上传（站长） ---------- */
@@ -1236,4 +1400,5 @@ Session.init();
     album: pageAlbum,
     "album-view": pageAlbumView,
     guestbook: pageGuestbook,
+    admin: pageAdmin,
 }[document.body.dataset.page] || (() => {}))();

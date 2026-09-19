@@ -1026,3 +1026,14 @@ a:hover { text-decoration: underline; }
 /* ---------- 站长模式：访客隐藏编辑入口 ---------- */
 .owner-only { display: none !important; }
 html.owner .owner-only { display: revert !important; }
+
+/* ---------- GitHub 评论 / 审核后台 ---------- */
+.ci-avatar.gh { border-radius: 50%; object-fit: cover; }
+.comment-loading { font-size: 13px; color: var(--card-dim); padding: 6px 0; }
+.comment-hint { font-size: 12px; color: var(--card-dim); }
+.comment-entry { display: block; margin: 0 16px; padding: 9px 12px; font-size: 13px; }
+.comment-entry:hover { text-decoration: none; border-color: var(--accent); }
+.admin-post-ref { font-size: 12px; color: var(--card-dim); margin-top: 3px; }
+.admin-ops { margin-top: 8px; display: flex; gap: 16px; font-size: 13px; }
+.admin-ops a { cursor: pointer; color: var(--link); }
+.admin-ops a.danger { color: #ff7a7a; }

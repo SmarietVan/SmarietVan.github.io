@@ -4,17 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="color-scheme" content="only light">
-    <title>写日志 - SmarietVan的空间</title>
+    <title>评论审核 - SmarietVan的空间</title>
     <link rel="stylesheet" href="assets/css/qqzone.css?v=3">
 </head>
-<body data-page="editor">
+<body data-page="admin">
 
 <header class="topbar">
     <div class="topbar-inner">
         <a class="logo" href="index.html"><span class="logo-star">★</span> SmarietVan的空间</a>
         <nav class="topnav">
             <a href="index.html" class="topnav-item">我的主页</a>
-            <a href="blog.html" class="topnav-item active">日志</a>
+            <a href="blog.html" class="topnav-item">日志</a>
             <a href="album.html" class="topnav-item">相册</a>
             <a href="guestbook.html" class="topnav-item">留言板</a>
             <div class="topnav-item dress" id="dressBtn">装扮 ▾
@@ -40,34 +40,27 @@
     </div>
 </header>
 
-<div class="container subpage editor-page">
+<div class="container subpage">
     <section class="card">
         <div class="page-tabs">
-            <span class="ptab active" id="editorTitle">写日志</span>
-            <div class="ptools"><span><a href="blog.html" style="color:inherit">« 返回日志列表</a></span></div>
+            <span class="ptab active" data-atab="pending">待审核</span>
+            <span class="ptab" data-atab="approved">已通过</span>
+            <div class="ptools"><span><a href="index.html" style="color:inherit">« 返回主页</a></span></div>
         </div>
-        <div class="editor-body">
-            <div class="login-bar" id="loginBar"></div>
-            <div id="editorForm" class="owner-only">
-            <input type="text" class="ed-title" id="edTitle" placeholder="请输入日志标题" maxlength="60">
-            <div class="ed-row">
-                <label>分类：</label>
-                <select id="edCate" class="ed-select"></select>
-                <button class="btn-plain" id="edNewCate">＋ 新建分类</button>
-                <label class="ed-priv"><input type="checkbox" id="edPriv"> 私密日记（仅自己可见）</label>
-            </div>
-            <textarea class="ed-content" id="edContent" placeholder="正文：随便写点什么吧……&#10;支持换行，发表后可在主页动态流和日志列表看到。"></textarea>
-            <div class="ed-actions">
-                <button class="btn-blue" id="edPublish">发 表</button>
-                <button class="btn-plain" id="edDraft">存草稿</button>
-                <button class="btn-plain" id="edCancel">取 消</button>
-            </div>
-            </div>
+        <div id="adminBody">
+            <div class="empty-state">加载中……</div>
         </div>
     </section>
 </div>
 
 <footer class="footer">© 2025 SmarietVan的空间 · Powered by GitHub Pages</footer>
+
+<button class="back-top hidden" id="backTop">︿</button>
+
+<div class="float-layer" aria-hidden="true">
+    <span class="floater f1">✦</span><span class="floater f2">✧</span><span class="floater f3">○</span>
+    <span class="floater f4">✦</span><span class="floater f5">♪</span><span class="floater f6">✧</span>
+</div>
 
 <script src="assets/js/store.js?v=3"></script>
 <script src="assets/js/qqzone.js?v=3"></script>
