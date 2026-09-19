@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="starry">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="only light">
+    <title>SmarietVan的空间</title>
+    <link rel="stylesheet" href="assets/css/qqzone.css">
+</head>
+<body data-page="home">
+
+<!-- ══════════ 顶部黑条 ══════════ -->
+<header class="topbar">
+    <div class="topbar-inner">
+        <a class="logo" href="#"><span class="logo-star">★</span> SmarietVan的空间</a>
+        <nav class="topnav">
+            <a href="index.html" class="topnav-item active">我的主页</a>
+            <a href="blog.html" class="topnav-item">日志</a>
+            <a href="album.html" class="topnav-item">相册</a>
+            <a href="guestbook.html" class="topnav-item">留言板</a>
+            <div class="topnav-item dress" id="dressBtn">装扮 ▾
+                <div class="skin-panel hidden" id="skinPanel">
+                    <button data-skin="starry" class="skin-option">星空蓝</button>
+                    <button data-skin="pink" class="skin-option">樱花粉</button>
+                    <button data-skin="cool" class="skin-option">炫酷黑</button>
+                    <button data-skin="green" class="skin-option">清新绿</button>
+                </div>
+            </div>
+        </nav>
+        <div class="topbar-right">
+            <!-- 音乐播放器 -->
+            <div class="music" id="musicPlayer" title="背景音乐">
+                <button class="music-play" id="playBtn">▶</button>
+                <span class="eq" id="eq"><i></i><i></i><i></i><i></i></span>
+                <span class="music-name" id="musicName">背景音乐</span>
+                <audio id="bgm" loop src="assets/music/bgm.mp3"></audio>
+            </div>
+            <input class="search" type="text" placeholder="用户/游戏/动态">
+            <img class="topbar-avatar" src="https://github.com/SmarietVan.png" alt="avatar">
+            <span class="topbar-nick">SmarietVan</span>
+            <span class="diamond" title="黄钻贵族">💎</span>
+        </div>
+    </div>
+</header>
+
+<!-- ══════════ 空间横幅 ══════════ -->
+<div class="banner">
+    <div class="banner-stars" aria-hidden="true"></div>
+    <svg class="banner-star" viewBox="0 0 100 100" aria-hidden="true">
+        <defs>
+            <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#fff3c4"/>
+                <stop offset=".5" stop-color="#ffd75e"/>
+                <stop offset="1" stop-color="#c98a1b"/>
+            </linearGradient>
+        </defs>
+        <polygon points="50,4 61.5,37 96,37.5 68.5,58.5 78.5,93 50,72 21.5,93 31.5,58.5 4,37.5 38.5,37"
+                 fill="url(#gold)"/>
+    </svg>
+    <div class="banner-inner">
+        <h1 class="space-name">SmarietVan的空间 <span class="badge lv">LV7</span> <span class="badge gh">GitHub</span></h1>
+        <p class="space-url">https://smarietvan.github.io</p>
+    </div>
+    <div class="banner-owner">
+        <img class="owner-avatar" src="https://github.com/SmarietVan.png" alt="头像">
+        <span class="owner-nick">SmarietVan</span>
+        <a class="follow-btn" href="https://github.com/SmarietVan" target="_blank" rel="noopener">＋ Follow</a>
+    </div>
+</div>
+
+<!-- ══════════ 正文 ══════════ -->
+<div class="container">
+
+    <!-- 左栏 -->
+    <aside class="sidebar">
+        <!-- 统计 -->
+        <section class="card stat-card">
+            <div class="stat"><b id="statAlbums">0</b><span>相册</span></div>
+            <div class="stat"><b id="statPosts">0</b><span>日志</span></div>
+            <div class="stat"><b id="statMsgs">0</b><span>留言</span></div>
+        </section>
+
+        <!-- 个人档 -->
+        <section class="card" id="profile">
+            <h2 class="card-title">个人档</h2>
+            <ul class="info-list">
+                <li><span class="info-icon">📇</span> 代码搬砖工 · 男 · 现居赛博空间</li>
+                <li><span class="info-icon">💼</span> 人生娱乐公司</li>
+                <li><span class="info-icon">📍</span> 来自 github.com/SmarietVan</li>
+                <li><span class="info-icon">✍️</span> Talk is cheap. Show me the code.</li>
+            </ul>
+        </section>
+
+        <!-- 最近访客 -->
+        <section class="card">
+            <h2 class="card-title">最近访客</h2>
+            <div class="visitor-avatars">
+                <span class="v-avatar" title="访客">🐱</span>
+                <span class="v-avatar" title="访客">🐶</span>
+                <span class="v-avatar" title="访客">🦊</span>
+                <span class="v-avatar" title="访客">🐼</span>
+                <span class="v-avatar" title="访客">🐸</span>
+                <span class="v-avatar" title="访客">🦁</span>
+            </div>
+            <p class="visit-count">
+                <span id="busuanzi_container_site_pv">本空间被踩过 <b id="busuanzi_value_site_pv">--</b> 次</span><br>
+                <span id="busuanzi_container_site_uv">来过 <b id="busuanzi_value_site_uv">--</b> 位客人</span>
+            </p>
+        </section>
+    </aside>
+
+    <!-- 右栏：动态流（由 app.js 从 store 渲染） -->
+    <main class="feed" id="feed"></main>
+</div>
+
+<footer class="footer">© 2025 SmarietVan的空间 · Powered by GitHub Pages · 欢迎下次光临 (◕‿◕)</footer>
+
+<!-- 返回顶部 -->
+<button class="back-top hidden" id="backTop">︿</button>
+
+<!-- 漂浮挂件 -->
+<div class="float-layer" aria-hidden="true">
+    <span class="floater f1">✦</span><span class="floater f2">✧</span><span class="floater f3">○</span>
+    <span class="floater f4">✦</span><span class="floater f5">♪</span><span class="floater f6">✧</span>
+</div>
+
+<script async src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
+<script src="assets/js/store.js"></script>
+<script src="assets/js/qqzone.js"></script>
+<script src="assets/js/app.js"></script>
+</body>
+</html>

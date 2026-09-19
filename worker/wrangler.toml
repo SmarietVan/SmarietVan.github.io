@@ -1,0 +1,11 @@
+name = "qzone-cms"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+workers_dev = true
+
+[vars]
+GITHUB_CLIENT_ID = "Ov23liskY7H1ftVEJJzj"
+OWNER = "SmarietVan"
+REPO = "SmarietVan/SmarietVan.github.io"
+BRANCH = "main"
+SITE = "https://smarietvan.github.io"
