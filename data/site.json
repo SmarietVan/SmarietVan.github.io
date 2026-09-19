@@ -8,9 +8,9 @@
     "✍️|Talk is cheap. Show me the code."
   ],
   "banner": {
-    "mode": "theme",
+    "mode": "image",
     "color": "#0a1f4d",
-    "image": ""
+    "image": "assets/img/bg/banner-mu85jc6o.png"
   },
   "pageBg": {
     "mode": "theme",
