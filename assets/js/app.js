@@ -281,6 +281,19 @@ const Session = {
     },
 };
 
+/* 读取仓库 JSON 文件（线上走 Contents API 实时，本地走相对路径） */
+async function fetchRepoJson(path) {
+    const local = ["localhost", "127.0.0.1"].includes(location.hostname);
+    if (local) {
+        return fetch(path).then((r) => (r.ok ? r.json() : null));
+    }
+    const r = await fetch(
+        `https://api.github.com/repos/${SITE_CONFIG.repoOwner}/${SITE_CONFIG.repoName}/contents/${path}?ref=${SITE_CONFIG.branch}`,
+        { headers: { Accept: "application/vnd.github.raw+json" } });
+    if (!r.ok) return null;
+    return r.json();
+}
+
 /* ============================================================
    音乐播放器（全局）：播放列表存仓库 data/music.json
    [{ name, path }] —— 所有访客可见可听
@@ -290,19 +303,12 @@ const Player = {
     idx: -1,
     audio: null,
 
-    manifestUrl() {
-        const local = ["localhost", "127.0.0.1"].includes(location.hostname);
-        return local
-            ? "data/music.json"
-            : `https://raw.githubusercontent.com/${SITE_CONFIG.repoOwner}/${SITE_CONFIG.repoName}/${SITE_CONFIG.branch}/data/music.json`;
-    },
-
     async init() {
         this.audio = document.getElementById("bgm");
         if (!this.audio) return;
         let manifest = null;
         try {
-            const m = await fetch(this.manifestUrl()).then((r) => (r.ok ? r.json() : null));
+            const m = await fetchRepoJson("data/music.json");
             if (Array.isArray(m)) manifest = m;
         } catch { /* 清单拉不到 */ }
         if (manifest) this.tracks = manifest;
@@ -365,16 +371,9 @@ const Player = {
 const SiteCfg = {
     data: null,
 
-    url() {
-        const local = ["localhost", "127.0.0.1"].includes(location.hostname);
-        return local
-            ? "data/site.json"
-            : `https://raw.githubusercontent.com/${SITE_CONFIG.repoOwner}/${SITE_CONFIG.repoName}/${SITE_CONFIG.branch}/data/site.json`;
-    },
-
     async load() {
         try {
-            const c = await fetch(this.url()).then((r) => (r.ok ? r.json() : null));
+            const c = await fetchRepoJson("data/site.json");
             if (c && typeof c === "object") this.data = c;
         } catch { /* 无配置 */ }
         this.apply();
