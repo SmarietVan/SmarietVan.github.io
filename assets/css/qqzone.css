@@ -1097,3 +1097,9 @@ html.owner .owner-only { display: revert !important; }
     border-radius: 4px;
 }
 .ed-preview.hidden, .ed-content.hidden { display: none; }
+
+/* ---------- 统计卡可点击 ---------- */
+a.stat { color: inherit; text-decoration: none; transition: background .2s; }
+a.stat:hover { background: rgba(255,255,255,.05); }
+a.stat:hover b { color: var(--accent); }
+a.stat span { color: var(--card-dim); }
