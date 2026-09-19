@@ -201,22 +201,31 @@ const Session = {
 
     /* 上传二进制文件（如音乐）：Contents API 限 1MB，走 Git Data API 支持大文件 */
     async uploadBinary(path, file, message) {
+        const dataUrl = await new Promise((res, rej) => {
+            const fr = new FileReader();
+            fr.onload = () => res(fr.result);
+            fr.onerror = rej;
+            fr.readAsDataURL(file);
+        });
+        return this.commitFiles([{ path, base64: dataUrl.split(",")[1] }], message || `上传文件 ${path}`);
+    },
+
+    /* 单 commit 提交多个文件：files = [{ path, base64 }] 或 [{ path, text }] */
+    async commitFiles(files, message) {
         const git = `https://api.github.com/repos/${SITE_CONFIG.repoOwner}/${SITE_CONFIG.repoName}/git`;
         const headers = this._headers();
         try {
-            // 1. 文件 → base64 → blob
-            const dataUrl = await new Promise((res, rej) => {
-                const fr = new FileReader();
-                fr.onload = () => res(fr.result);
-                fr.onerror = rej;
-                fr.readAsDataURL(file);
-            });
-            const b64 = dataUrl.split(",")[1];
-            const blob = await fetch(`${git}/blobs`, {
-                method: "POST", headers,
-                body: JSON.stringify({ content: b64, encoding: "base64" }),
-            }).then((r) => r.json());
-            if (!blob.sha) return { error: blob.message || "创建 blob 失败" };
+            // 1. 每个文件建 blob
+            const treeItems = [];
+            for (const f of files) {
+                const base64 = f.base64 ?? btoa(unescape(encodeURIComponent(f.text)));
+                const blob = await fetch(`${git}/blobs`, {
+                    method: "POST", headers,
+                    body: JSON.stringify({ content: base64, encoding: "base64" }),
+                }).then((r) => r.json());
+                if (!blob.sha) return { error: blob.message || "创建 blob 失败" };
+                treeItems.push({ path: f.path, mode: "100644", type: "blob", sha: blob.sha });
+            }
 
             // 2. 当前分支 head → base tree
             const ref = await fetch(`${git}/ref/heads/${SITE_CONFIG.branch}`, { headers }).then((r) => r.json());
@@ -227,16 +236,13 @@ const Session = {
             // 3. 新 tree → 新 commit → 更新 ref
             const tree = await fetch(`${git}/trees`, {
                 method: "POST", headers,
-                body: JSON.stringify({
-                    base_tree: headCommit.tree.sha,
-                    tree: [{ path, mode: "100644", type: "blob", sha: blob.sha }],
-                }),
+                body: JSON.stringify({ base_tree: headCommit.tree.sha, tree: treeItems }),
             }).then((r) => r.json());
             if (!tree.sha) return { error: tree.message || "创建 tree 失败" };
 
             const commit = await fetch(`${git}/commits`, {
                 method: "POST", headers,
-                body: JSON.stringify({ message: message || `上传文件 ${path}`, tree: tree.sha, parents: [headSha] }),
+                body: JSON.stringify({ message: message || "更新", tree: tree.sha, parents: [headSha] }),
             }).then((r) => r.json());
             if (!commit.sha) return { error: commit.message || "创建 commit 失败" };
 
@@ -703,6 +709,8 @@ async function pageEditor() {
     const id = getQuery("id");
     let post = id ? (Store.getPost(id) || await RepoPosts.getById(id)) : null;
     const isRepoPost = !!(post && post.repo);
+    /* 待发表图片：编辑期间只存本地，发表时才随文章一起提交 */
+    let pendingImages = (post && post.images) || {};
 
     const titleEl = document.getElementById("edTitle");
     const cateEl = document.getElementById("edCate");
@@ -775,14 +783,24 @@ async function pageEditor() {
             return;
         }
 
-        /* 公开 + 已登录 → 提交到仓库 */
+        /* 公开 + 已登录 → 图片和文章合成一个 commit 提交到仓库 */
         if (Session.ready && loggedIn) {
             const pid = isRepoPost ? post.id : newPostId();
-            const md = RepoPosts.buildMd({ ...p, time: post ? post.time : Store.now() });
-            toast("正在提交到仓库……");
-            const r = await Session.savePost(`posts/${pid}.md`, md);
+            let md = RepoPosts.buildMd({ ...p, time: post ? post.time : Store.now() });
+
+            const files = [];
+            for (const [key, img] of Object.entries(pendingImages)) {
+                files.push({ path: img.path, base64: img.dataURL.split(",")[1] });
+                md = md.split(`pending:${key}`).join(img.path);
+            }
+            files.push({ path: `posts/${pid}.md`, text: md });
+
+            const imgCount = files.length - 1;
+            toast(imgCount ? `正在提交（含 ${imgCount} 张图片）……` : "正在提交到仓库……");
+            const r = await Session.commitFiles(files, `📝 ${isRepoPost ? "更新" : "发布"}日志 ${p.title}`);
             if (r.ok) {
                 if (post && !isRepoPost) Store.removePost(post.id); // 草稿发表后移除本地
+                pendingImages = {};
                 RepoPosts.list = null;
                 toast("已提交，稍等片刻自动上线");
                 setTimeout(() => (location.href = "post.html?id=" + encodeURIComponent(pid)), 900);
@@ -795,7 +813,11 @@ async function pageEditor() {
         /* 公开 + 未登录/未部署 → 导出 Markdown 手动提交 */
         const pid = isRepoPost ? post.id : newPostId();
         const md = RepoPosts.buildMd({ ...p, time: post ? post.time : Store.now() });
+        const imgNote = Object.keys(pendingImages).length
+            ? `<p style="color:#ffb347;margin-bottom:10px">⚠️ 本文含 ${Object.keys(pendingImages).length} 张插图，导出发布不会携带图片，建议点「站长登录」后直接发表。</p>`
+            : "";
         modal("导出 Markdown（手动发布）", `
+            ${imgNote}
             <p style="margin-bottom:10px;color:var(--card-dim)">
                 未登录站长账号，无法直接提交。把下面内容保存为
                 <b style="color:var(--accent)">posts/${esc(pid)}.md</b>，
@@ -814,45 +836,44 @@ async function pageEditor() {
         });
     });
 
-    /* 存草稿（永远本地） */
+    /* 存草稿（永远本地，连同待发表图片） */
     document.getElementById("edDraft").addEventListener("click", () => {
         const p = collect();
         if (!p) return;
-        if (post && !isRepoPost) Store.updatePost(post.id, { ...p, draft: true });
-        else Store.addPost({ ...p, draft: true });
+        const payload = { ...p, draft: true, images: pendingImages };
+        if (post && !isRepoPost) Store.updatePost(post.id, payload);
+        else Store.addPost(payload);
         toast("已存入草稿箱（仅本浏览器）");
         setTimeout(() => (location.href = "blog.html"), 700);
     });
 
     document.getElementById("edCancel").addEventListener("click", () => history.back());
 
-    /* 插入图片：上传到仓库 assets/img/posts/ 并插入 Markdown 引用 */
+    /* 插入图片：编辑期只存本地并立刻可预览，发表时才随文章一起上传 */
     const imgPicker = document.createElement("input");
     imgPicker.type = "file";
     imgPicker.accept = "image/*";
+    imgPicker.id = "imgPicker";
     imgPicker.hidden = true;
     document.body.appendChild(imgPicker);
 
-    document.getElementById("edImage").addEventListener("click", () => {
-        if (!Session.ready) { Session.login(); return; }
-        imgPicker.click();
-    });
+    document.getElementById("edImage").addEventListener("click", () => imgPicker.click());
 
     imgPicker.addEventListener("change", async () => {
         const file = imgPicker.files[0];
         imgPicker.value = "";
         if (!file) return;
         if (file.size > 10 * 1024 * 1024) { toast("图片限 10MB"); return; }
-        const ext = (file.name.split(".").pop() || "png").toLowerCase();
-        const path = `assets/img/posts/${Date.now()}.${ext}`;
-        toast("正在上传图片……");
-        const r = await Session.uploadBinary(path, file, `🖼 上传日志配图 ${path}`);
-        if (!r.ok) { toast("上传失败：" + (r.error || "未知错误")); return; }
-        const md = `\n![${file.name.replace(/\.\w+$/, "")}](${path})\n`;
+        const ext = (file.name.split(".").pop() || "png").toLowerCase().replace(/[^a-z0-9]/g, "") || "png";
+        const key = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+        const dataURL = await fileToDataURL(file); // 压缩到 1000px 内
+        pendingImages[key] = { path: `assets/img/posts/${key}.${ext}`, dataURL };
+        const md = `\n![${file.name.replace(/\.\w+$/, "")}](pending:${key})\n`;
         const ta = contentEl;
         const pos = ta.selectionStart ?? ta.value.length;
         ta.value = ta.value.slice(0, pos) + md + ta.value.slice(pos);
-        toast("图片已插入，约 1 分钟后链接生效");
+        if (!previewArea.classList.contains("hidden")) renderPreview();
+        toast("图片已插入（发表时才会上传）");
     });
 
     /* 预览切换（开着预览时实时刷新） */
@@ -860,9 +881,13 @@ async function pageEditor() {
     const previewBtn = document.getElementById("edPreviewBtn");
 
     function renderPreview() {
+        let md = contentEl.value || "*（还没有内容）*";
+        // 待发表图片：替换成本地 dataURL 立即预览
+        md = md.replace(/\(pending:([\w-]+)\)/g, (m, k) =>
+            "(" + (pendingImages[k] ? pendingImages[k].dataURL : m) + ")");
         previewArea.innerHTML = typeof marked !== "undefined"
-            ? marked.parse(contentEl.value || "*（还没有内容）*", { breaks: true })
-            : esc(contentEl.value);
+            ? marked.parse(md, { breaks: true })
+            : esc(md);
     }
 
     previewBtn.addEventListener("click", () => {
