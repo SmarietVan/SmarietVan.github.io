@@ -825,6 +825,53 @@ async function pageEditor() {
     });
 
     document.getElementById("edCancel").addEventListener("click", () => history.back());
+
+    /* 插入图片：上传到仓库 assets/img/posts/ 并插入 Markdown 引用 */
+    const imgPicker = document.createElement("input");
+    imgPicker.type = "file";
+    imgPicker.accept = "image/*";
+    imgPicker.hidden = true;
+    document.body.appendChild(imgPicker);
+
+    document.getElementById("edImage").addEventListener("click", () => {
+        if (!Session.ready) { Session.login(); return; }
+        imgPicker.click();
+    });
+
+    imgPicker.addEventListener("change", async () => {
+        const file = imgPicker.files[0];
+        imgPicker.value = "";
+        if (!file) return;
+        if (file.size > 10 * 1024 * 1024) { toast("图片限 10MB"); return; }
+        const ext = (file.name.split(".").pop() || "png").toLowerCase();
+        const path = `assets/img/posts/${Date.now()}.${ext}`;
+        toast("正在上传图片……");
+        const r = await Session.uploadBinary(path, file, `🖼 上传日志配图 ${path}`);
+        if (!r.ok) { toast("上传失败：" + (r.error || "未知错误")); return; }
+        const md = `\n![${file.name.replace(/\.\w+$/, "")}](${path})\n`;
+        const ta = contentEl;
+        const pos = ta.selectionStart ?? ta.value.length;
+        ta.value = ta.value.slice(0, pos) + md + ta.value.slice(pos);
+        toast("图片已插入，约 1 分钟后链接生效");
+    });
+
+    /* 预览切换 */
+    const previewArea = document.getElementById("previewArea");
+    document.getElementById("edPreviewBtn").addEventListener("click", (e) => {
+        const showing = !previewArea.classList.contains("hidden");
+        if (showing) {
+            previewArea.classList.add("hidden");
+            contentEl.classList.remove("hidden");
+            e.currentTarget.textContent = "👁 预览";
+        } else {
+            previewArea.innerHTML = typeof marked !== "undefined"
+                ? marked.parse(contentEl.value || "*（还没有内容）*", { breaks: true })
+                : esc(contentEl.value);
+            contentEl.classList.add("hidden");
+            previewArea.classList.remove("hidden");
+            e.currentTarget.textContent = "✏️ 继续编辑";
+        }
+    });
 }
 
 function newPostId() {
@@ -870,7 +917,7 @@ async function pagePost() {
                 <span>阅读 ${meta.views}</span>
                 <span>评论 ${meta.comments.length}</span>
             </div>
-            <div class="pd-content">${esc(post.content)}</div>
+            <div class="pd-content md-body" id="pdContent"></div>
             <div class="pd-tools">
                 ${tools}
                 <a href="blog.html">« 返回日志列表</a>
@@ -910,6 +957,10 @@ async function pagePost() {
             const title = document.querySelector(".pd-comments-title");
             if (title) title.textContent = `评论（${list.length}）`;
         });
+
+        document.getElementById("pdContent").innerHTML = typeof marked !== "undefined"
+            ? marked.parse(post.content, { breaks: true })
+            : esc(post.content);
 
         document.getElementById("pdLike").addEventListener("click", (e) => {
             const likedNow = Liked.toggle(id);

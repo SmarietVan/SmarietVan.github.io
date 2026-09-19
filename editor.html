@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="color-scheme" content="only light">
     <title>写日志 - SmarietVan的空间</title>
-    <link rel="stylesheet" href="assets/css/qqzone.css?v=3">
+    <link rel="stylesheet" href="assets/css/qqzone.css?v=4">
 </head>
 <body data-page="editor">
 
@@ -56,7 +56,13 @@
                 <button class="btn-plain" id="edNewCate">＋ 新建分类</button>
                 <label class="ed-priv"><input type="checkbox" id="edPriv"> 私密日记（仅自己可见）</label>
             </div>
-            <textarea class="ed-content" id="edContent" placeholder="正文：随便写点什么吧……&#10;支持换行，发表后可在主页动态流和日志列表看到。"></textarea>
+            <div class="ed-toolbar">
+                <button class="btn-plain" id="edImage">🖼 插入图片</button>
+                <button class="btn-plain" id="edPreviewBtn">👁 预览</button>
+                <span class="ed-tip">支持 Markdown，可直接粘贴 .md 文本</span>
+            </div>
+            <textarea class="ed-content" id="edContent" placeholder="正文：支持 Markdown 格式……&#10;# 标题、**加粗**、- 列表、`代码`、![图片](链接) 都可以"></textarea>
+            <div class="ed-preview md-body hidden" id="previewArea"></div>
             <div class="ed-actions">
                 <button class="btn-blue" id="edPublish">发 表</button>
                 <button class="btn-plain" id="edDraft">存草稿</button>
@@ -69,8 +75,9 @@
 
 <footer class="footer">© 2025 SmarietVan的空间 · Powered by GitHub Pages</footer>
 
-<script src="assets/js/store.js?v=3"></script>
-<script src="assets/js/qqzone.js?v=3"></script>
-<script src="assets/js/app.js?v=3"></script>
+<script src="assets/js/marked.min.js"></script>
+<script src="assets/js/store.js?v=4"></script>
+<script src="assets/js/qqzone.js?v=4"></script>
+<script src="assets/js/app.js?v=4"></script>
 </body>
 </html>
