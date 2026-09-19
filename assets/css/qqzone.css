@@ -1191,3 +1191,29 @@ a.stat span { color: var(--card-dim); }
 .set-color { width: 44px; height: 26px; padding: 0; border: 1px solid var(--card-border); background: none; border-radius: 4px; cursor: pointer; }
 .set-img-btn { padding: 4px 12px; font-size: 12px; }
 .set-img-name { font-size: 12px; color: var(--card-dim); }
+
+/* ---------- 上传进度面板 ---------- */
+.upload-panel {
+    margin: 14px 20px 18px;
+    padding: 14px 16px;
+    background: #26262b;
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+}
+.upload-panel.hidden { display: none; }
+.up-title { font-size: 14px; font-weight: bold; color: var(--accent); margin-bottom: 10px; }
+.up-list { list-style: none; }
+.up-list li {
+    display: flex;
+    align-items: center;
+    padding: 7px 0;
+    font-size: 13px;
+    border-bottom: 1px dashed var(--card-border);
+}
+.up-list li:last-child { border-bottom: none; }
+.up-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--card-text); }
+.up-name i { font-style: normal; color: var(--card-dim); font-size: 11px; margin-left: 6px; }
+.up-state { flex-shrink: 0; margin-left: 12px; color: var(--card-dim); font-size: 12px; }
+.up-state.doing { color: var(--accent); }
+.up-state.done { color: #4caf50; }
+.up-step { margin-top: 10px; font-size: 12px; color: var(--card-dim); }

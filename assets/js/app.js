@@ -227,27 +227,32 @@ const Session = {
         return this.commitFiles([{ path, base64: dataUrl.split(",")[1] }], message || `上传文件 ${path}`);
     },
 
-    /* 单 commit 提交多个文件：files = [{ path, base64 }] 或 [{ path, text }] */
-    async commitFiles(files, message) {
+    /* 单 commit 提交多个文件：files = [{ path, base64 }] 或 [{ path, text }]
+       onProgress(stage, i, total)：blob=逐个上传中，tree/commit/ref=收尾阶段 */
+    async commitFiles(files, message, onProgress) {
         const git = `https://api.github.com/repos/${SITE_CONFIG.repoOwner}/${SITE_CONFIG.repoName}/git`;
         const headers = this._headers();
+        const report = (s, i, t) => { if (onProgress) onProgress(s, i, t); };
         try {
             // 1. 每个文件建 blob
             const treeItems = [];
-            for (const f of files) {
+            for (let i = 0; i < files.length; i++) {
+                const f = files[i];
+                report("blob", i + 1, files.length);
                 const base64 = f.base64 ?? btoa(unescape(encodeURIComponent(f.text)));
                 const blob = await fetch(`${git}/blobs`, {
                     method: "POST", headers,
                     body: JSON.stringify({ content: base64, encoding: "base64" }),
                 }).then((r) => r.json());
-                if (!blob.sha) return { error: blob.message || "创建 blob 失败" };
+                if (!blob.sha) return { error: blob.message || "创建 blob 失败", stage: "blob", index: i };
                 treeItems.push({ path: f.path, mode: "100644", type: "blob", sha: blob.sha });
             }
 
             // 2. 当前分支 head → base tree
+            report("tree", 0, 0);
             const ref = await fetch(`${git}/ref/heads/${SITE_CONFIG.branch}`, { headers }).then((r) => r.json());
             const headSha = ref.object && ref.object.sha;
-            if (!headSha) return { error: "读取分支失败" };
+            if (!headSha) return { error: "读取分支失败", stage: "tree" };
             const headCommit = await fetch(`${git}/commits/${headSha}`, { headers }).then((r) => r.json());
 
             // 3. 新 tree → 新 commit → 更新 ref
@@ -255,21 +260,23 @@ const Session = {
                 method: "POST", headers,
                 body: JSON.stringify({ base_tree: headCommit.tree.sha, tree: treeItems }),
             }).then((r) => r.json());
-            if (!tree.sha) return { error: tree.message || "创建 tree 失败" };
+            if (!tree.sha) return { error: tree.message || "创建 tree 失败", stage: "tree" };
 
+            report("commit", 0, 0);
             const commit = await fetch(`${git}/commits`, {
                 method: "POST", headers,
                 body: JSON.stringify({ message: message || "更新", tree: tree.sha, parents: [headSha] }),
             }).then((r) => r.json());
-            if (!commit.sha) return { error: commit.message || "创建 commit 失败" };
+            if (!commit.sha) return { error: commit.message || "创建 commit 失败", stage: "commit" };
 
+            report("ref", 0, 0);
             const upd = await fetch(`${git}/refs/heads/${SITE_CONFIG.branch}`, {
                 method: "PATCH", headers,
                 body: JSON.stringify({ sha: commit.sha }),
             });
-            return upd.ok ? { ok: true } : { error: "更新分支失败" };
+            return upd.ok ? { ok: true } : { error: "更新分支失败", stage: "ref" };
         } catch (e) {
-            return { error: "网络异常：" + e.message };
+            return { error: "网络异常：" + e.message, stage: "network" };
         }
     },
 };
@@ -1673,15 +1680,44 @@ async function pageMusic() {
         picker.hidden = true;
         document.body.appendChild(picker);
 
+        const panel = document.getElementById("uploadPanel");
+        const fmtSize = (n) => n > 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.ceil(n / 1024) + " KB";
+
+        function showPanel(rows) {
+            panel.classList.remove("hidden");
+            panel.innerHTML = `
+                <div class="up-title">⏫ 正在上传 ${rows.length} 首歌</div>
+                <ul class="up-list">${rows.map((r, i) => `
+                    <li data-row="${i}">
+                        <span class="up-name">${esc(r.name)} <i>${fmtSize(r.size)}</i></span>
+                        <span class="up-state">等待</span>
+                    </li>`).join("")}</ul>
+                <div class="up-step" id="upStep"></div>`;
+        }
+        function setRow(i, text, cls) {
+            const el = panel.querySelector(`[data-row="${i}"] .up-state`);
+            if (el) { el.textContent = text; el.className = "up-state " + (cls || ""); }
+        }
+        function setStep(text) {
+            const el = document.getElementById("upStep");
+            if (el) el.textContent = text;
+        }
+
         upBtn.addEventListener("click", () => picker.click());
         picker.addEventListener("change", async () => {
-            const files = [...picker.files];
+            const files = [...picker.files].filter((f) => {
+                if (f.size > 30 * 1024 * 1024) { toast(`「${f.name}」超过 30MB，跳过`); return false; }
+                return true;
+            });
             picker.value = "";
             if (!files.length) return;
+
+            showPanel(files);
             const commitFiles = [];
-            for (const f of files) {
-                if (f.size > 30 * 1024 * 1024) { toast(`「${f.name}」超过 30MB，跳过`); continue; }
-                toast(`正在读取 ${f.name}……`);
+            for (let i = 0; i < files.length; i++) {
+                const f = files[i];
+                setRow(i, "读取中…", "doing");
+                setStep(`第 1 步 / 共 2 步：读取文件 ${i + 1}/${files.length}`);
                 const dataUrl = await new Promise((res, rej) => {
                     const fr = new FileReader();
                     fr.onload = () => res(fr.result);
@@ -1689,16 +1725,34 @@ async function pageMusic() {
                     fr.readAsDataURL(f);
                 });
                 const ext = (f.name.split(".").pop() || "mp3").toLowerCase().replace(/[^a-z0-9]/g, "") || "mp3";
-                const path = `assets/music/s-${Date.now().toString(36)}-${commitFiles.length}.${ext}`;
-                commitFiles.push({ path, base64: dataUrl.split(",")[1] });
+                const path = `assets/music/s-${Date.now().toString(36)}-${i}.${ext}`;
+                commitFiles.push({ path, base64: dataUrl.split(",")[1], _row: i });
                 Player.tracks.push({ name: f.name.replace(/\.\w+$/, ""), path });
+                setRow(i, "已读取，待上传");
             }
-            if (!commitFiles.length) return;
             commitFiles.push({ path: "data/music.json", text: JSON.stringify(Player.tracks, null, 2) });
-            toast(`正在上传 ${commitFiles.length - 1} 首歌……`);
-            const r = await Session.commitFiles(commitFiles, "🎵 上传歌曲");
-            if (r.ok) { toast("上传成功，约 1 分钟后访客可听"); renderList(); }
-            else toast("上传失败：" + (r.error || "未知错误"));
+
+            const r = await Session.commitFiles(commitFiles, "🎵 上传歌曲", (stage, i, total) => {
+                if (stage === "blob") {
+                    setStep(`第 2 步 / 共 2 步：上传文件 ${i}/${total}（含歌单配置）`);
+                    const row = commitFiles[i - 1];
+                    if (row && row._row !== undefined) setRow(row._row, "上传中…", "doing");
+                    if (i > 1 && commitFiles[i - 2] && commitFiles[i - 2]._row !== undefined) setRow(commitFiles[i - 2]._row, "已上传 ✓", "done");
+                } else if (stage === "tree") {
+                    setStep("收尾：生成提交……");
+                    commitFiles.forEach((f) => { if (f._row !== undefined) setRow(f._row, "已上传 ✓", "done"); });
+                } else if (stage === "commit") setStep("收尾：创建 commit……");
+                else if (stage === "ref") setStep("收尾：更新分支……");
+            });
+
+            if (r.ok) {
+                setStep("✅ 全部完成，约 1 分钟后访客可听");
+                document.getElementById("upPanel").querySelector(".up-title").textContent = "上传完成";
+                renderList();
+                setTimeout(() => panel.classList.add("hidden"), 5000);
+            } else {
+                setStep("❌ 失败：" + (r.error || "未知错误") + "（可重新上传）");
+            }
         });
     } else {
         upBtn.classList.add("owner-only");
