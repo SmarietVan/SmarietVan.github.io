@@ -13,8 +13,8 @@
     "image": "assets/img/bg/banner-mu85jc6o.png"
   },
   "pageBg": {
-    "mode": "theme",
-    "color": "#eef1f5",
+    "mode": "color",
+    "color": "#454545",
     "image": ""
   }
 }
