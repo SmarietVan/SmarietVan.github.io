@@ -281,17 +281,10 @@ const Session = {
     },
 };
 
-/* 读取仓库 JSON 文件（线上走 Contents API 实时，本地走相对路径） */
+/* 读取仓库 JSON 文件（同源加载 + 防缓存；本地/线上通用） */
 async function fetchRepoJson(path) {
-    const local = ["localhost", "127.0.0.1"].includes(location.hostname);
-    if (local) {
-        return fetch(path).then((r) => (r.ok ? r.json() : null));
-    }
-    const r = await fetch(
-        `https://api.github.com/repos/${SITE_CONFIG.repoOwner}/${SITE_CONFIG.repoName}/contents/${path}?ref=${SITE_CONFIG.branch}`,
-        { headers: { Accept: "application/vnd.github.raw+json" } });
-    if (!r.ok) return null;
-    return r.json();
+    const r = await fetch(path + "?t=" + Date.now());
+    return r.ok ? r.json() : null;
 }
 
 /* ============================================================
@@ -314,6 +307,40 @@ const Player = {
         if (manifest) this.tracks = manifest;
         else this.tracks = [{ name: "背景音乐", path: "assets/music/bgm.mp3" }]; // 旧版单文件兼容
         this.bindMini();
+        this.restoreState();
+    },
+
+    /* 播放状态持久化：切页/刷新/冷启动都续上 */
+    saveState() {
+        if (this.idx < 0) return;
+        localStorage.setItem("qqzone-player", JSON.stringify({
+            idx: this.idx,
+            time: this.audio.currentTime || 0,
+            playing: !this.audio.paused,
+        }));
+    },
+
+    restoreState() {
+        let s = null;
+        try { s = JSON.parse(localStorage.getItem("qqzone-player")); } catch { /* 无 */ }
+        if (!s || s.idx < 0 || s.idx >= this.tracks.length) return;
+        this.idx = s.idx;
+        this.audio.src = this.tracks[s.idx].path;
+        this.updateName();
+        this.audio.addEventListener("loadedmetadata", () => {
+            if (s.time) this.audio.currentTime = s.time;
+        }, { once: true });
+        if (s.playing) {
+            this.audio.play().catch(() => {
+                // 浏览器禁止自动播放：呼吸灯提示，页面任意处点一下即续播
+                const btn = document.getElementById("playBtn");
+                if (btn) btn.classList.add("pulse");
+                document.addEventListener("click", () => {
+                    this.audio.play().catch(() => {});
+                    if (btn) btn.classList.remove("pulse");
+                }, { once: true });
+            });
+        }
     },
 
     bindMini() {
@@ -329,9 +356,17 @@ const Player = {
         nameEl.title = "打开音乐盒";
         nameEl.addEventListener("click", () => (location.href = "music.html"));
 
-        this.audio.addEventListener("play", () => { box.classList.add("playing"); btn.textContent = "⏸"; });
-        this.audio.addEventListener("pause", () => { box.classList.remove("playing"); btn.textContent = "▶"; });
+        this.audio.addEventListener("play", () => { box.classList.add("playing"); btn.textContent = "⏸"; btn.classList.remove("pulse"); this.saveState(); });
+        this.audio.addEventListener("pause", () => { box.classList.remove("playing"); btn.textContent = "▶"; this.saveState(); });
         this.audio.addEventListener("ended", () => this.next());
+        this.audio.addEventListener("waiting", () => { nameEl.textContent = "缓冲中…"; });
+        this.audio.addEventListener("playing", () => this.updateName());
+        this.audio.addEventListener("timeupdate", () => {
+            if (!this._lastSave || Date.now() - this._lastSave > 2000) {
+                this._lastSave = Date.now();
+                this.saveState();
+            }
+        });
         this.audio.addEventListener("error", () => {
             box.classList.remove("playing");
             nameEl.textContent = "暂无音乐，去音乐盒上传";
@@ -546,22 +581,11 @@ const RepoPosts = {
 
     async load(force) {
         if (this.list && !force) return this.list;
-        const isLocal = ["localhost", "127.0.0.1"].includes(location.hostname);
         try {
-            let files;
-            let fetchText;
-            if (isLocal) {
-                files = await fetch("posts/index.json").then((r) => (r.ok ? r.json() : []));
-                fetchText = (f) => fetch("posts/" + f).then((r) => (r.ok ? r.text() : ""));
-            } else {
-                const api = `https://api.github.com/repos/${SITE_CONFIG.repoOwner}/${SITE_CONFIG.repoName}/contents/posts?ref=${SITE_CONFIG.branch}`;
-                const arr = await fetch(api).then((r) => (r.ok ? r.json() : []));
-                files = (Array.isArray(arr) ? arr : []).map((f) => f.name).filter((n) => n.endsWith(".md"));
-                fetchText = (f) =>
-                    fetch(`https://raw.githubusercontent.com/${SITE_CONFIG.repoOwner}/${SITE_CONFIG.repoName}/${SITE_CONFIG.branch}/posts/${f}`)
-                        .then((r) => (r.ok ? r.text() : ""));
-            }
-            const posts = await Promise.all(files.map(async (f) => this.parseMd(f, await fetchText(f))));
+            const files = (await fetch("posts/index.json?t=" + Date.now()).then((r) => (r.ok ? r.json() : [])))
+                .filter((n) => n.endsWith(".md"));
+            const posts = await Promise.all(files.map(async (f) =>
+                this.parseMd(f, await fetch("posts/" + f).then((r) => (r.ok ? r.text() : "")))));
             this.list = posts.filter((p) => p.content || p.title);
         } catch {
             this.list = [];
@@ -574,6 +598,15 @@ const RepoPosts = {
         return list.find((p) => p.id === id) || null;
     },
 };
+
+/* 更新日志索引 posts/index.json（同源加载依赖它列目录） */
+async function updatePostsIndex({ add, remove } = {}) {
+    let idx = [];
+    try { idx = await fetch("posts/index.json?t=" + Date.now()).then((r) => (r.ok ? r.json() : [])); } catch { /* 视为空 */ }
+    if (remove) idx = idx.filter((f) => f !== remove + ".md");
+    if (add && !idx.includes(add + ".md")) idx.push(add + ".md");
+    return Session.commitFiles([{ path: "posts/index.json", text: JSON.stringify(idx) }], "📝 更新日志索引");
+}
 
 /* 任意日志（仓库/本地）统一取 meta */
 function metaOf(id) { return Store.getMeta(id); }
@@ -717,6 +750,7 @@ async function pageBlog() {
                     const r = await Session.deletePost(`posts/${id}.md`);
                     if (r.ok) {
                         toast("已删除，稍等部署生效");
+                        updatePostsIndex({ remove: id });
                         const i = repoPosts.findIndex((p) => p.id === id);
                         if (i >= 0) repoPosts.splice(i, 1);
                         renderAll();
@@ -969,6 +1003,10 @@ async function pageEditor() {
                 md = md.split(`pending:${key}`).join(img.path);
             }
             files.push({ path: `posts/${pid}.md`, text: md });
+            let postIdx = [];
+            try { postIdx = await fetch("posts/index.json?t=" + Date.now()).then((r) => (r.ok ? r.json() : [])); } catch { /* 视为空 */ }
+            if (!postIdx.includes(pid + ".md")) postIdx.push(pid + ".md");
+            files.push({ path: "posts/index.json", text: JSON.stringify(postIdx) });
 
             const imgCount = files.length - 1;
             toast(imgCount ? `正在提交（含 ${imgCount} 张图片）……` : "正在提交到仓库……");
@@ -1190,6 +1228,7 @@ async function pagePost() {
                     if (r.ok) {
                         RepoPosts.list = null;
                         toast("已删除，稍等部署生效");
+                        updatePostsIndex({ remove: id });
                         setTimeout(() => (location.href = "blog.html"), 900);
                     } else {
                         toast("删除失败：" + (r.error || "未知错误"));
@@ -1655,13 +1694,38 @@ async function pageMusic() {
     document.getElementById("btnNext").addEventListener("click", () => { Player.next(); syncCur(); renderList(); });
     document.getElementById("btnPlay").addEventListener("click", () => Player.toggle());
 
-    audio.addEventListener("play", () => { document.getElementById("btnPlay").textContent = "⏸"; syncCur(); renderList(); });
-    audio.addEventListener("pause", () => { document.getElementById("btnPlay").textContent = "▶"; });
-    audio.addEventListener("timeupdate", () => {
-        if (!audio.duration) return;
-        fill.style.width = (audio.currentTime / audio.duration * 100) + "%";
-        curTime.textContent = `${fmt(audio.currentTime)} / ${fmt(audio.duration)}`;
-    });
+    if (!audio._musicBound) {
+        audio._musicBound = true;
+        audio.addEventListener("play", () => {
+            const b = document.getElementById("btnPlay");
+            if (b) b.textContent = "⏸";
+            const cn = document.getElementById("curName");
+            if (cn && Player.idx >= 0) cn.textContent = Player.tracks[Player.idx].name;
+        });
+        audio.addEventListener("pause", () => {
+            const b = document.getElementById("btnPlay");
+            if (b) b.textContent = "▶";
+        });
+        audio.addEventListener("timeupdate", () => {
+            const f = document.getElementById("playFill");
+            const t = document.getElementById("curTime");
+            if (!audio.duration || !f || !t) return;
+            f.style.width = (audio.currentTime / audio.duration * 100) + "%";
+            t.textContent = `${fmt(audio.currentTime)} / ${fmt(audio.duration)}`;
+        });
+        document.addEventListener("player:change", () => {
+            const cn = document.getElementById("curName");
+            if (cn && Player.idx >= 0) cn.textContent = Player.tracks[Player.idx].name;
+            const tl = document.getElementById("trackList");
+            if (tl) {
+                tl.querySelectorAll(".track-item").forEach((el) => {
+                    el.classList.toggle("playing", +el.dataset.i === Player.idx);
+                    el.querySelector(".track-no").textContent = +el.dataset.i === Player.idx ? "🎵" : (+el.dataset.i + 1);
+                });
+            }
+        });
+    }
+
     bar.addEventListener("click", (e) => {
         if (!audio.duration) return;
         const r = bar.getBoundingClientRect();
@@ -1924,15 +1988,75 @@ SiteCfg.load();
     btn.addEventListener("click", () => (location.href = "music.html"));
 })();
 
-({
-    home: pageHome,
-    blog: pageBlog,
-    editor: pageEditor,
-    post: pagePost,
-    album: pageAlbum,
-    "album-view": pageAlbumView,
-    guestbook: pageGuestbook,
-    admin: pageAdmin,
-    music: pageMusic,
-    settings: pageSettings,
-}[document.body.dataset.page] || (() => {}))();
+const App = {
+    initPage() {
+        const fn = {
+            home: pageHome,
+            blog: pageBlog,
+            editor: pageEditor,
+            post: pagePost,
+            album: pageAlbum,
+            "album-view": pageAlbumView,
+            guestbook: pageGuestbook,
+            admin: pageAdmin,
+            music: pageMusic,
+            settings: pageSettings,
+        }[document.body.dataset.page];
+        if (fn) fn();
+        if (SiteCfg.data) SiteCfg.apply();
+    },
+};
+App.initPage();
+
+/* ============================================================
+   PJAX 站内跳转：只替换内容区，顶栏和播放器不刷新，音乐不断
+   ============================================================ */
+const PJAX = {
+    KEEP: ["header.topbar", ".float-layer", ".back-top"],
+
+    async go(url, push = true) {
+        try {
+            const html = await fetch(url).then((r) => {
+                if (!r.ok) throw new Error("http " + r.status);
+                return r.text();
+            });
+            const doc = new DOMParser().parseFromString(html, "text/html");
+
+            /* 当前页面要保留的元素：顶栏（含播放器）、漂浮层、返回顶部、脚本、文件框 */
+            const keep = new Set();
+            this.KEEP.forEach((sel) => document.querySelectorAll(sel).forEach((el) => keep.add(el)));
+            document.querySelectorAll("script, input[type=file]").forEach((el) => keep.add(el));
+            [...document.body.children].forEach((el) => { if (!keep.has(el)) el.remove(); });
+
+            /* 新页面内容：跳过它自己的顶栏/漂浮层/脚本/文件框 */
+            const skip = new Set();
+            this.KEEP.forEach((sel) => doc.querySelectorAll(sel).forEach((el) => skip.add(el)));
+            doc.querySelectorAll("script, input[type=file]").forEach((el) => skip.add(el));
+            [...doc.body.children].forEach((el) => {
+                if (!skip.has(el)) document.body.appendChild(document.importNode(el, true));
+            });
+
+            document.body.dataset.page = doc.body.dataset.page || "";
+            document.title = doc.title;
+            if (push) history.pushState(null, "", url);
+            window.scrollTo(0, 0);
+            App.initPage();
+        } catch {
+            location.href = url; // 失败降级为正常跳转
+        }
+    },
+};
+
+document.addEventListener("click", (e) => {
+    const a = e.target.closest("a");
+    if (!a || a.target === "_blank" || a.hasAttribute("download")) return;
+    const href = a.getAttribute("href") || "";
+    if (!href || href.startsWith("#") || /^[a-z][a-z0-9+.-]*:/i.test(href)) return;
+    if (!/\.html($|[#?])/.test(href)) return;
+    e.preventDefault();
+    PJAX.go(href);
+});
+
+window.addEventListener("popstate", () => {
+    PJAX.go(location.pathname.split("/").pop() + location.search, false);
+});
