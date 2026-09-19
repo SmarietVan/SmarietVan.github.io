@@ -649,7 +649,7 @@ async function pageEditor() {
                 setTimeout(() => location.reload(), 600);
             });
         } else {
-            bar.innerHTML = `未登录站长账号，文章只能存草稿或导出
+            bar.innerHTML = `这里是站长的写作台 ✍️ 访客请移步 <a href="blog.html">日志列表</a>
                 <a id="loginBtn" style="margin-left:10px;cursor:pointer;color:var(--link)">站长登录</a>`;
             bar.querySelector("#loginBtn").addEventListener("click", () => Session.login());
         }
@@ -1177,13 +1177,30 @@ function pageGuestbook() {
 /* ---------- 启动 ---------- */
 Session.init();
 
+/* 站长模式：token 校验通过才显示编辑入口 */
+(async function initOwnerMode() {
+    if (!Session.ready) return;
+    if (await Session.check()) document.documentElement.classList.add("owner");
+})();
+
+/* 页脚站长入口（换设备从这里登录） */
+(function initOwnerEntry() {
+    const f = document.querySelector(".footer");
+    if (!f) return;
+    const a = document.createElement("a");
+    a.href = "editor.html";
+    a.textContent = "站长入口";
+    a.style.cssText = "margin-left:12px;opacity:.6";
+    f.appendChild(a);
+})();
+
 /* ---------- 背景音乐上传（站长） ---------- */
 (function initMusicUpload() {
     const player = document.getElementById("musicPlayer");
     if (!player) return;
 
     const btn = document.createElement("button");
-    btn.className = "music-play";
+    btn.className = "music-play owner-only";
     btn.textContent = "⬆";
     btn.title = "上传背景音乐（站长）";
     player.insertBefore(btn, player.firstChild);

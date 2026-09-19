@@ -69,7 +69,7 @@
         <div class="page-tabs">
             <span class="ptab active" data-tab="public">我的日志</span>
             <span class="ptab" data-tab="private">私密日记</span>
-            <div class="ptools">
+            <div class="ptools owner-only">
                 <span id="draftBox">📄 草稿箱</span>
                 <span id="recycleBin">🗑 回收站</span>
                 <span id="blogSetting">⚙ 设置</span>
@@ -77,7 +77,7 @@
         </div>
         <div class="page-body">
             <div class="page-main">
-                <div class="btn-row">
+                <div class="btn-row owner-only">
                     <a class="btn-blue" href="editor.html" style="text-decoration:none">T 写日志</a>
                     <button class="btn-plain" id="tplBtn">☰ 模板日志 ▾</button>
                 </div>
@@ -85,7 +85,7 @@
             </div>
             <aside class="page-side">
                 <div class="side-block">
-                    <div class="side-title">日志分类 <span class="manage" id="cateManage">管理</span></div>
+                    <div class="side-title">日志分类 <span class="manage owner-only" id="cateManage">管理</span></div>
                     <ul class="cate-list" id="cateList"></ul>
                 </div>
                 <div class="side-block">

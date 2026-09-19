@@ -1022,3 +1022,7 @@ a:hover { text-decoration: underline; }
 }
 .login-bar b { color: var(--accent); }
 .login-bar a { color: var(--link); }
+
+/* ---------- 站长模式：访客隐藏编辑入口 ---------- */
+.owner-only { display: none !important; }
+html.owner .owner-only { display: revert !important; }
