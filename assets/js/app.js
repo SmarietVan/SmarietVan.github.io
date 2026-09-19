@@ -287,6 +287,32 @@ async function fetchRepoJson(path) {
     return r.ok ? r.json() : null;
 }
 
+/* Markdown 渲染（marked 加载失败时自动重试，最终兜底纯文本） */
+function renderMd(el, md) {
+    if (typeof marked !== "undefined") {
+        el.innerHTML = marked.parse(md, { breaks: true });
+        return;
+    }
+    if (renderMd._loading) { renderMd._queue.push([el, md]); return; }
+    renderMd._loading = true;
+    renderMd._queue = [[el, md]];
+    const s = document.createElement("script");
+    s.src = "assets/js/marked.min.js";
+    s.onload = () => {
+        renderMd._queue.forEach(([e, m]) => { e.innerHTML = marked.parse(m, { breaks: true }); });
+        renderMd._loading = false;
+        renderMd._queue = [];
+    };
+    s.onerror = () => {
+        renderMd._queue.forEach(([e, m]) => { e.textContent = m; });
+        renderMd._loading = false;
+        renderMd._queue = [];
+    };
+    document.body.appendChild(s);
+}
+renderMd._loading = false;
+renderMd._queue = [];
+
 /* ============================================================
    音乐播放器（全局）：播放列表存仓库 data/music.json
    [{ name, path }] —— 所有访客可见可听
@@ -1098,9 +1124,11 @@ async function pageEditor() {
         // 待发表图片：替换成本地 dataURL 立即预览
         md = md.replace(/\(pending:([\w-]+)\)/g, (m, k) =>
             "(" + (pendingImages[k] ? pendingImages[k].dataURL : m) + ")");
-        previewArea.innerHTML = typeof marked !== "undefined"
-            ? marked.parse(md, { breaks: true })
-            : esc(md);
+        if (typeof marked !== "undefined") {
+            previewArea.innerHTML = marked.parse(md, { breaks: true });
+        } else {
+            renderMd(previewArea, md);
+        }
     }
 
     previewBtn.addEventListener("click", () => {
@@ -1206,9 +1234,7 @@ async function pagePost() {
             if (title) title.textContent = `评论（${list.length}）`;
         });
 
-        document.getElementById("pdContent").innerHTML = typeof marked !== "undefined"
-            ? marked.parse(post.content, { breaks: true })
-            : esc(post.content);
+        renderMd(document.getElementById("pdContent"), post.content);
 
         document.getElementById("pdLike").addEventListener("click", (e) => {
             const likedNow = Liked.toggle(id);
