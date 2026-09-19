@@ -52,35 +52,6 @@ const GISCUS_CONFIG = {
     });
 })();
 
-/* ---------- 背景音乐 ---------- */
-(function initMusic() {
-    const audio = document.getElementById("bgm");
-    const btn = document.getElementById("playBtn");
-    const player = document.getElementById("musicPlayer");
-    const nameEl = document.getElementById("musicName");
-
-    audio.addEventListener("error", () => {
-        nameEl.textContent = "点 ⬆ 上传音乐";
-    });
-
-    btn.addEventListener("click", () => {
-        if (audio.paused) {
-            audio.play().then(() => {
-                player.classList.add("playing");
-                btn.textContent = "⏸";
-                nameEl.textContent = "播放中";
-            }).catch(() => {
-                nameEl.textContent = "点 ⬆ 上传音乐";
-            });
-        } else {
-            audio.pause();
-            player.classList.remove("playing");
-            btn.textContent = "▶";
-            nameEl.textContent = "背景音乐";
-        }
-    });
-})();
-
 /* ---------- 返回顶部 ---------- */
 (function initBackTop() {
     const btn = document.getElementById("backTop");

@@ -183,6 +183,23 @@ const Session = {
         }
     },
 
+    /* 删除仓库文件（Contents API） */
+    async deleteFile(path, message) {
+        try {
+            const exist = await fetch(this._api(path) + "?ref=" + SITE_CONFIG.branch, { headers: this._headers() });
+            if (!exist.ok) return { error: "文件不存在" };
+            const sha = (await exist.json()).sha;
+            const r = await fetch(this._api(path), {
+                method: "DELETE",
+                headers: this._headers(),
+                body: JSON.stringify({ message: message || `删除 ${path}`, sha, branch: SITE_CONFIG.branch }),
+            });
+            return r.ok ? { ok: true } : { error: (await r.json()).message || ("HTTP " + r.status) };
+        } catch (e) {
+            return { error: "网络异常：" + e.message };
+        }
+    },
+
     async deletePost(path) {
         try {
             const exist = await fetch(this._api(path) + "?ref=" + SITE_CONFIG.branch, { headers: this._headers() });
@@ -253,6 +270,158 @@ const Session = {
             return upd.ok ? { ok: true } : { error: "更新分支失败" };
         } catch (e) {
             return { error: "网络异常：" + e.message };
+        }
+    },
+};
+
+/* ============================================================
+   音乐播放器（全局）：播放列表存仓库 data/music.json
+   [{ name, path }] —— 所有访客可见可听
+   ============================================================ */
+const Player = {
+    tracks: [],
+    idx: -1,
+    audio: null,
+
+    manifestUrl() {
+        const local = ["localhost", "127.0.0.1"].includes(location.hostname);
+        return local
+            ? "data/music.json"
+            : `https://raw.githubusercontent.com/${SITE_CONFIG.repoOwner}/${SITE_CONFIG.repoName}/${SITE_CONFIG.branch}/data/music.json`;
+    },
+
+    async init() {
+        this.audio = document.getElementById("bgm");
+        if (!this.audio) return;
+        let manifest = null;
+        try {
+            const m = await fetch(this.manifestUrl()).then((r) => (r.ok ? r.json() : null));
+            if (Array.isArray(m)) manifest = m;
+        } catch { /* 清单拉不到 */ }
+        if (manifest) this.tracks = manifest;
+        else this.tracks = [{ name: "背景音乐", path: "assets/music/bgm.mp3" }]; // 旧版单文件兼容
+        this.bindMini();
+    },
+
+    bindMini() {
+        const btn = document.getElementById("playBtn");
+        const nameEl = document.getElementById("musicName");
+        const box = document.getElementById("musicPlayer");
+        if (!btn || !nameEl) return;
+
+        nameEl.textContent = this.tracks.length ? this.tracks[0].name : "暂无音乐";
+
+        btn.addEventListener("click", () => this.toggle());
+        nameEl.style.cursor = "pointer";
+        nameEl.title = "打开音乐盒";
+        nameEl.addEventListener("click", () => (location.href = "music.html"));
+
+        this.audio.addEventListener("play", () => { box.classList.add("playing"); btn.textContent = "⏸"; });
+        this.audio.addEventListener("pause", () => { box.classList.remove("playing"); btn.textContent = "▶"; });
+        this.audio.addEventListener("ended", () => this.next());
+        this.audio.addEventListener("error", () => {
+            box.classList.remove("playing");
+            nameEl.textContent = "暂无音乐，去音乐盒上传";
+        });
+    },
+
+    updateName() {
+        const nameEl = document.getElementById("musicName");
+        if (nameEl && this.idx >= 0) nameEl.textContent = this.tracks[this.idx].name;
+    },
+
+    playAt(i) {
+        if (!this.tracks.length) return;
+        this.idx = ((i % this.tracks.length) + this.tracks.length) % this.tracks.length;
+        this.audio.src = this.tracks[this.idx].path;
+        this.updateName();
+        this.audio.play().catch(() => toast("播放失败，文件可能还在部署中"));
+        document.dispatchEvent(new CustomEvent("player:change"));
+    },
+
+    toggle() {
+        if (this.audio.paused) {
+            if (this.idx < 0) this.playAt(0);
+            else this.audio.play().catch(() => toast("播放失败"));
+        } else {
+            this.audio.pause();
+        }
+    },
+
+    next() { this.playAt(this.idx + 1); },
+    prev() { this.playAt(this.idx - 1); },
+};
+
+/* ============================================================
+   站点配置（所有人可见）：仓库 data/site.json
+   ============================================================ */
+const SiteCfg = {
+    data: null,
+
+    url() {
+        const local = ["localhost", "127.0.0.1"].includes(location.hostname);
+        return local
+            ? "data/site.json"
+            : `https://raw.githubusercontent.com/${SITE_CONFIG.repoOwner}/${SITE_CONFIG.repoName}/${SITE_CONFIG.branch}/data/site.json`;
+    },
+
+    async load() {
+        try {
+            const c = await fetch(this.url()).then((r) => (r.ok ? r.json() : null));
+            if (c && typeof c === "object") this.data = c;
+        } catch { /* 无配置 */ }
+        this.apply();
+    },
+
+    nick() { return (this.data && this.data.ownerNick) || "SmarietVan"; },
+
+    apply() {
+        const c = this.data;
+        if (!c) return;
+
+        if (c.spaceName) {
+            document.querySelectorAll(".space-name").forEach((el) => {
+                for (const n of el.childNodes) {
+                    if (n.nodeType === 3) { n.textContent = c.spaceName + " "; break; }
+                }
+            });
+            document.querySelectorAll(".logo").forEach((el) => {
+                el.innerHTML = `<span class="logo-star">★</span> ${esc(c.spaceName)}`;
+            });
+            document.title = document.title.replace("SmarietVan的空间", c.spaceName);
+        }
+        if (c.ownerNick) {
+            document.querySelectorAll(".owner-nick, .topbar-nick, .post-name").forEach((el) => {
+                el.textContent = c.ownerNick;
+            });
+        }
+        if (c.profile && Array.isArray(c.profile)) {
+            const list = document.querySelector(".info-list");
+            if (list) {
+                list.innerHTML = c.profile.map((line) => {
+                    const i = line.indexOf("|");
+                    const icon = i > 0 ? line.slice(0, i) : "📌";
+                    const text = i > 0 ? line.slice(i + 1) : line;
+                    return `<li><span class="info-icon">${esc(icon)}</span> ${esc(text)}</li>`;
+                }).join("");
+            }
+        }
+        /* 顶部横幅背景 */
+        const banner = document.querySelector(".banner");
+        if (banner && c.banner) {
+            if (c.banner.mode === "color" && c.banner.color) {
+                banner.style.background = c.banner.color;
+            } else if (c.banner.mode === "image" && c.banner.image) {
+                banner.style.background = `url("${c.banner.image}") center/cover no-repeat`;
+            }
+        }
+        /* 页面背景 */
+        if (c.pageBg) {
+            if (c.pageBg.mode === "color" && c.pageBg.color) {
+                document.body.style.background = c.pageBg.color;
+            } else if (c.pageBg.mode === "image" && c.pageBg.image) {
+                document.body.style.background = `url("${c.pageBg.image}") center/cover fixed no-repeat`;
+            }
         }
     },
 };
@@ -1418,8 +1587,247 @@ async function pageAdmin() {
     render();
 }
 
+/* ============================================================
+   音乐盒
+   ============================================================ */
+async function pageMusic() {
+    const listEl = document.getElementById("trackList");
+    const curName = document.getElementById("curName");
+    const curTime = document.getElementById("curTime");
+    const bar = document.getElementById("playBar");
+    const fill = document.getElementById("playFill");
+    const loggedIn = await Session.check();
+    const audio = Player.audio;
+
+    function fmt(s) {
+        if (!isFinite(s)) return "--:--";
+        return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+    }
+
+    function renderList() {
+        if (!Player.tracks.length) {
+            listEl.innerHTML = `<div class="empty-state">还没有歌曲${loggedIn ? "，点上方「上传歌曲」传几首吧" : ""}</div>`;
+            return;
+        }
+        listEl.innerHTML = Player.tracks.map((t, i) => `
+            <li class="track-item ${i === Player.idx ? "playing" : ""}" data-i="${i}">
+                <span class="track-no">${i === Player.idx ? "🎵" : i + 1}</span>
+                <span class="track-name">${esc(t.name)}</span>
+                ${loggedIn ? `<span class="track-del" data-del="${i}" title="删除">🗑</span>` : ""}
+            </li>`).join("");
+
+        listEl.querySelectorAll(".track-item").forEach((el) => {
+            el.addEventListener("click", (e) => {
+                if (e.target.closest(".track-del")) return;
+                Player.playAt(+el.dataset.i);
+                renderList();
+            });
+        });
+        listEl.querySelectorAll("[data-del]").forEach((el) => {
+            el.addEventListener("click", async () => {
+                const i = +el.dataset.del;
+                const t = Player.tracks[i];
+                if (!confirm(`删除歌曲「${t.name}」？`)) return;
+                toast("正在删除……");
+                const dr = await Session.deleteFile(t.path, `🗑 删除歌曲 ${t.name}`);
+                if (!dr.ok) { toast("删除失败：" + (dr.error || "")); return; }
+                Player.tracks.splice(i, 1);
+                if (Player.idx === i) { audio.pause(); Player.idx = -1; }
+                else if (Player.idx > i) Player.idx--;
+                await Session.commitFiles([{ path: "data/music.json", text: JSON.stringify(Player.tracks, null, 2) }], "🎵 更新歌单");
+                toast("已删除");
+                renderList();
+            });
+        });
+    }
+
+    function syncCur() {
+        curName.textContent = Player.idx >= 0 ? Player.tracks[Player.idx].name : "未在播放";
+    }
+
+    document.getElementById("btnPrev").addEventListener("click", () => { Player.prev(); syncCur(); renderList(); });
+    document.getElementById("btnNext").addEventListener("click", () => { Player.next(); syncCur(); renderList(); });
+    document.getElementById("btnPlay").addEventListener("click", () => Player.toggle());
+
+    audio.addEventListener("play", () => { document.getElementById("btnPlay").textContent = "⏸"; syncCur(); renderList(); });
+    audio.addEventListener("pause", () => { document.getElementById("btnPlay").textContent = "▶"; });
+    audio.addEventListener("timeupdate", () => {
+        if (!audio.duration) return;
+        fill.style.width = (audio.currentTime / audio.duration * 100) + "%";
+        curTime.textContent = `${fmt(audio.currentTime)} / ${fmt(audio.duration)}`;
+    });
+    bar.addEventListener("click", (e) => {
+        if (!audio.duration) return;
+        const r = bar.getBoundingClientRect();
+        audio.currentTime = audio.duration * (e.clientX - r.left) / r.width;
+    });
+    document.addEventListener("player:change", () => { syncCur(); renderList(); });
+
+    /* 上传歌曲（站长，多选） */
+    const upBtn = document.getElementById("uploadSongsBtn");
+    if (loggedIn) {
+        const picker = document.createElement("input");
+        picker.type = "file";
+        picker.accept = "audio/*";
+        picker.multiple = true;
+        picker.hidden = true;
+        document.body.appendChild(picker);
+
+        upBtn.addEventListener("click", () => picker.click());
+        picker.addEventListener("change", async () => {
+            const files = [...picker.files];
+            picker.value = "";
+            if (!files.length) return;
+            const commitFiles = [];
+            for (const f of files) {
+                if (f.size > 30 * 1024 * 1024) { toast(`「${f.name}」超过 30MB，跳过`); continue; }
+                toast(`正在读取 ${f.name}……`);
+                const dataUrl = await new Promise((res, rej) => {
+                    const fr = new FileReader();
+                    fr.onload = () => res(fr.result);
+                    fr.onerror = rej;
+                    fr.readAsDataURL(f);
+                });
+                const ext = (f.name.split(".").pop() || "mp3").toLowerCase().replace(/[^a-z0-9]/g, "") || "mp3";
+                const path = `assets/music/s-${Date.now().toString(36)}-${commitFiles.length}.${ext}`;
+                commitFiles.push({ path, base64: dataUrl.split(",")[1] });
+                Player.tracks.push({ name: f.name.replace(/\.\w+$/, ""), path });
+            }
+            if (!commitFiles.length) return;
+            commitFiles.push({ path: "data/music.json", text: JSON.stringify(Player.tracks, null, 2) });
+            toast(`正在上传 ${commitFiles.length - 1} 首歌……`);
+            const r = await Session.commitFiles(commitFiles, "🎵 上传歌曲");
+            if (r.ok) { toast("上传成功，约 1 分钟后访客可听"); renderList(); }
+            else toast("上传失败：" + (r.error || "未知错误"));
+        });
+    } else {
+        upBtn.classList.add("owner-only");
+    }
+
+    syncCur();
+    renderList();
+}
+
+/* ============================================================
+   站点设置（仅站长，配置存仓库 data/site.json，全站可见）
+   ============================================================ */
+async function pageSettings() {
+    const box = document.getElementById("settingsBody");
+    const loggedIn = await Session.check();
+
+    if (!loggedIn) {
+        box.innerHTML = `
+            <div class="empty-state">
+                站点设置仅站长可用<br><br>
+                <a id="setLogin" style="cursor:pointer;color:var(--link)">站长登录</a>
+            </div>`;
+        document.getElementById("setLogin").addEventListener("click", () => Session.login());
+        return;
+    }
+
+    const c = SiteCfg.data || {};
+    const profileText = (c.profile || [
+        "📇|代码搬砖工 · 男 · 现居赛博空间",
+        "💼|人生娱乐公司",
+        "📍|来自 github.com/SmarietVan",
+        "✍️|Talk is cheap. Show me the code.",
+    ]).join("\n");
+
+    box.innerHTML = `
+        <div class="set-form">
+            <label class="set-label">空间名称</label>
+            <input type="text" id="setSpaceName" value="${esc(c.spaceName || "SmarietVan的空间")}" maxlength="30">
+            <label class="set-label">主人昵称</label>
+            <input type="text" id="setNick" value="${esc(c.ownerNick || "SmarietVan")}" maxlength="20">
+            <label class="set-label">个人档（每行一条，格式：emoji|内容）</label>
+            <textarea id="setProfile" rows="5">${esc(profileText)}</textarea>
+
+            ${["banner", "pageBg"].map((k) => {
+                const conf = c[k] || {};
+                const label = k === "banner" ? "顶部横幅背景" : "页面背景";
+                return `
+                <div class="set-bg" data-key="${k}">
+                    <label class="set-label">${label}</label>
+                    <label class="set-radio"><input type="radio" name="${k}Mode" value="theme" ${(!conf.mode || conf.mode === "theme") ? "checked" : ""}> 跟随皮肤</label>
+                    <label class="set-radio"><input type="radio" name="${k}Mode" value="color" ${conf.mode === "color" ? "checked" : ""}> 纯色
+                        <input type="color" class="set-color" value="${conf.color || (k === "banner" ? "#0a1f4d" : "#eef1f5")}"></label>
+                    <label class="set-radio"><input type="radio" name="${k}Mode" value="image" ${conf.mode === "image" ? "checked" : ""}> 自定义图片
+                        <button class="btn-plain set-img-btn" type="button">选择图片</button>
+                        <span class="set-img-name">${conf.image ? "当前：" + esc(conf.image) : "未选择"}</span></label>
+                </div>`;
+            }).join("")}
+
+            <div class="ed-actions">
+                <button class="btn-blue" id="setSave">保存设置</button>
+                <span style="font-size:12px;color:var(--card-dim)">保存后约 1 分钟全站生效，所有访客可见</span>
+            </div>
+        </div>`;
+
+    /* 背景图选择（存本地待提交） */
+    const pendingBgs = {};
+    box.querySelectorAll(".set-bg").forEach((wrap) => {
+        const key = wrap.dataset.key;
+        const picker = document.createElement("input");
+        picker.type = "file";
+        picker.accept = "image/*";
+        picker.hidden = true;
+        box.appendChild(picker);
+        wrap.querySelector(".set-img-btn").addEventListener("click", () => picker.click());
+        picker.addEventListener("change", async () => {
+            const f = picker.files[0];
+            picker.value = "";
+            if (!f) return;
+            const ext = (f.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
+            const dataURL = await fileToDataURL(f);
+            pendingBgs[key] = { path: `assets/img/bg/${key}-${Date.now().toString(36)}.${ext}`, dataURL };
+            wrap.querySelector(".set-img-name").textContent = "已选择：" + f.name;
+            wrap.querySelector(`input[value=image]`).checked = true;
+        });
+    });
+
+    document.getElementById("setSave").addEventListener("click", async () => {
+        const cfg = {
+            spaceName: document.getElementById("setSpaceName").value.trim() || "SmarietVan的空间",
+            ownerNick: document.getElementById("setNick").value.trim() || "SmarietVan",
+            profile: document.getElementById("setProfile").value.split("\n").map((s) => s.trim()).filter(Boolean),
+            banner: { mode: box.querySelector('input[name=bannerMode]:checked').value, color: box.querySelectorAll(".set-color")[0].value, image: (c.banner && c.banner.image) || "" },
+            pageBg: { mode: box.querySelector('input[name=pageBgMode]:checked').value, color: box.querySelectorAll(".set-color")[1].value, image: (c.pageBg && c.pageBg.image) || "" },
+        };
+
+        const files = [{ path: "data/site.json", text: JSON.stringify(cfg, null, 2) }];
+        for (const [k, img] of Object.entries(pendingBgs)) {
+            cfg[k].image = img.path;
+            files.push({ path: img.path, base64: img.dataURL.split(",")[1] });
+            files[0].text = JSON.stringify(cfg, null, 2);
+        }
+
+        toast("正在保存设置……");
+        const r = await Session.commitFiles(files, "⚙️ 更新站点设置");
+        if (r.ok) {
+            SiteCfg.data = cfg;
+            SiteCfg.apply();
+            toast("已保存，约 1 分钟全站生效");
+        } else {
+            toast("保存失败：" + (r.error || "未知错误"));
+        }
+    });
+}
+
 /* ---------- 启动 ---------- */
 Session.init();
+Player.init();
+SiteCfg.load();
+
+/* 顶栏注入「音乐盒」导航 */
+(function initNavInject() {
+    const dress = document.querySelector(".dress");
+    if (!dress) return;
+    const a = document.createElement("a");
+    a.className = "topnav-item" + (document.body.dataset.page === "music" ? " active" : "");
+    a.href = "music.html";
+    a.textContent = "音乐盒";
+    dress.parentElement.insertBefore(a, dress);
+})();
 
 /* 站长模式：token 校验通过才显示编辑入口 */
 (async function initOwnerMode() {
@@ -1442,9 +1850,15 @@ Session.init();
     admin.className = "owner-only";
     admin.style.cssText = "margin-left:12px";
     f.appendChild(admin);
+    const set = document.createElement("a");
+    set.href = "settings.html";
+    set.textContent = "站点设置";
+    set.className = "owner-only";
+    set.style.cssText = "margin-left:12px";
+    f.appendChild(set);
 })();
 
-/* ---------- 背景音乐上传（站长） ---------- */
+/* ---------- 顶栏音乐上传按钮 → 音乐盒（站长） ---------- */
 (function initMusicUpload() {
     const player = document.getElementById("musicPlayer");
     if (!player) return;
@@ -1452,30 +1866,9 @@ Session.init();
     const btn = document.createElement("button");
     btn.className = "music-play owner-only";
     btn.textContent = "⬆";
-    btn.title = "上传背景音乐（站长）";
+    btn.title = "去音乐盒上传歌曲（站长）";
     player.insertBefore(btn, player.firstChild);
-
-    const picker = document.createElement("input");
-    picker.type = "file";
-    picker.accept = "audio/*";
-    picker.hidden = true;
-    document.body.appendChild(picker);
-
-    btn.addEventListener("click", () => {
-        if (!Session.ready) { Session.login(); return; }
-        picker.click();
-    });
-
-    picker.addEventListener("change", async () => {
-        const file = picker.files[0];
-        picker.value = "";
-        if (!file) return;
-        if (file.size > 30 * 1024 * 1024) { toast("文件太大（限 30MB）"); return; }
-        toast("正在上传音乐……");
-        const r = await Session.uploadBinary("assets/music/bgm.mp3", file, "🎵 更新背景音乐");
-        if (r.ok) toast("上传成功，约 1 分钟后全站生效");
-        else toast("上传失败：" + (r.error || "未知错误"));
-    });
+    btn.addEventListener("click", () => (location.href = "music.html"));
 })();
 
 ({
@@ -1487,4 +1880,6 @@ Session.init();
     "album-view": pageAlbumView,
     guestbook: pageGuestbook,
     admin: pageAdmin,
+    music: pageMusic,
+    settings: pageSettings,
 }[document.body.dataset.page] || (() => {}))();
