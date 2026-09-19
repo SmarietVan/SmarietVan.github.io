@@ -855,22 +855,32 @@ async function pageEditor() {
         toast("图片已插入，约 1 分钟后链接生效");
     });
 
-    /* 预览切换 */
+    /* 预览切换（开着预览时实时刷新） */
     const previewArea = document.getElementById("previewArea");
-    document.getElementById("edPreviewBtn").addEventListener("click", (e) => {
+    const previewBtn = document.getElementById("edPreviewBtn");
+
+    function renderPreview() {
+        previewArea.innerHTML = typeof marked !== "undefined"
+            ? marked.parse(contentEl.value || "*（还没有内容）*", { breaks: true })
+            : esc(contentEl.value);
+    }
+
+    previewBtn.addEventListener("click", () => {
         const showing = !previewArea.classList.contains("hidden");
         if (showing) {
             previewArea.classList.add("hidden");
             contentEl.classList.remove("hidden");
-            e.currentTarget.textContent = "👁 预览";
+            previewBtn.textContent = "👁 预览";
         } else {
-            previewArea.innerHTML = typeof marked !== "undefined"
-                ? marked.parse(contentEl.value || "*（还没有内容）*", { breaks: true })
-                : esc(contentEl.value);
+            renderPreview();
             contentEl.classList.add("hidden");
             previewArea.classList.remove("hidden");
-            e.currentTarget.textContent = "✏️ 继续编辑";
+            previewBtn.textContent = "✏️ 继续编辑";
         }
+    });
+
+    contentEl.addEventListener("input", () => {
+        if (!previewArea.classList.contains("hidden")) renderPreview();
     });
 }
 
