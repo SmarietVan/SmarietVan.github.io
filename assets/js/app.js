@@ -610,9 +610,12 @@ const RepoPosts = {
         try {
             const files = (await fetch("posts/index.json?t=" + Date.now()).then((r) => (r.ok ? r.json() : [])))
                 .filter((n) => n.endsWith(".md"));
-            const posts = await Promise.all(files.map(async (f) =>
-                this.parseMd(f, await fetch("posts/" + f).then((r) => (r.ok ? r.text() : "")))));
-            this.list = posts.filter((p) => p.content || p.title);
+            const results = await Promise.all(files.map(async (f) => {
+                const text = await fetch("posts/" + f).then((r) => (r.ok ? r.text() : null));
+                if (text === null || !text.trim()) return null; // 索引里的幽灵条目：文件已不存在
+                return this.parseMd(f, text);
+            }));
+            this.list = results.filter(Boolean);
         } catch {
             this.list = [];
         }
@@ -776,7 +779,8 @@ async function pageBlog() {
                     const r = await Session.deletePost(`posts/${id}.md`);
                     if (r.ok) {
                         toast("已删除，稍等部署生效");
-                        updatePostsIndex({ remove: id });
+                        const ir = await updatePostsIndex({ remove: id });
+                        if (!ir || !ir.ok) toast("⚠️ 索引更新失败，若列表出现空壳条目请刷新重试删除");
                         const i = repoPosts.findIndex((p) => p.id === id);
                         if (i >= 0) repoPosts.splice(i, 1);
                         renderAll();
@@ -1254,7 +1258,8 @@ async function pagePost() {
                     if (r.ok) {
                         RepoPosts.list = null;
                         toast("已删除，稍等部署生效");
-                        updatePostsIndex({ remove: id });
+                        const ir = await updatePostsIndex({ remove: id });
+                        if (!ir || !ir.ok) toast("⚠️ 索引更新失败，若列表出现空壳条目请重新删除一次");
                         setTimeout(() => (location.href = "blog.html"), 900);
                     } else {
                         toast("删除失败：" + (r.error || "未知错误"));
