@@ -60,7 +60,7 @@ const GISCUS_CONFIG = {
     const nameEl = document.getElementById("musicName");
 
     audio.addEventListener("error", () => {
-        nameEl.textContent = "请放 bgm.mp3";
+        nameEl.textContent = "点 ⬆ 上传音乐";
     });
 
     btn.addEventListener("click", () => {
@@ -70,7 +70,7 @@ const GISCUS_CONFIG = {
                 btn.textContent = "⏸";
                 nameEl.textContent = "播放中";
             }).catch(() => {
-                nameEl.textContent = "请放 bgm.mp3";
+                nameEl.textContent = "点 ⬆ 上传音乐";
             });
         } else {
             audio.pause();
@@ -92,8 +92,9 @@ const GISCUS_CONFIG = {
     });
 })();
 
-/* ---------- 鼠标跟随星星 ---------- */
+/* ---------- 鼠标跟随星星（触屏设备跳过） ---------- */
 (function initTrail() {
+    if (matchMedia("(hover: none)").matches) return;
     const CHARS = ["✦", "✧", "★", "♪"];
     let last = 0;
 

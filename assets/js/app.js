@@ -196,6 +196,57 @@ const Session = {
             return { error: "网络异常：" + e.message };
         }
     },
+
+    /* 上传二进制文件（如音乐）：Contents API 限 1MB，走 Git Data API 支持大文件 */
+    async uploadBinary(path, file, message) {
+        const git = `https://api.github.com/repos/${SITE_CONFIG.repoOwner}/${SITE_CONFIG.repoName}/git`;
+        const headers = this._headers();
+        try {
+            // 1. 文件 → base64 → blob
+            const dataUrl = await new Promise((res, rej) => {
+                const fr = new FileReader();
+                fr.onload = () => res(fr.result);
+                fr.onerror = rej;
+                fr.readAsDataURL(file);
+            });
+            const b64 = dataUrl.split(",")[1];
+            const blob = await fetch(`${git}/blobs`, {
+                method: "POST", headers,
+                body: JSON.stringify({ content: b64, encoding: "base64" }),
+            }).then((r) => r.json());
+            if (!blob.sha) return { error: blob.message || "创建 blob 失败" };
+
+            // 2. 当前分支 head → base tree
+            const ref = await fetch(`${git}/ref/heads/${SITE_CONFIG.branch}`, { headers }).then((r) => r.json());
+            const headSha = ref.object && ref.object.sha;
+            if (!headSha) return { error: "读取分支失败" };
+            const headCommit = await fetch(`${git}/commits/${headSha}`, { headers }).then((r) => r.json());
+
+            // 3. 新 tree → 新 commit → 更新 ref
+            const tree = await fetch(`${git}/trees`, {
+                method: "POST", headers,
+                body: JSON.stringify({
+                    base_tree: headCommit.tree.sha,
+                    tree: [{ path, mode: "100644", type: "blob", sha: blob.sha }],
+                }),
+            }).then((r) => r.json());
+            if (!tree.sha) return { error: tree.message || "创建 tree 失败" };
+
+            const commit = await fetch(`${git}/commits`, {
+                method: "POST", headers,
+                body: JSON.stringify({ message: message || `上传文件 ${path}`, tree: tree.sha, parents: [headSha] }),
+            }).then((r) => r.json());
+            if (!commit.sha) return { error: commit.message || "创建 commit 失败" };
+
+            const upd = await fetch(`${git}/refs/heads/${SITE_CONFIG.branch}`, {
+                method: "PATCH", headers,
+                body: JSON.stringify({ sha: commit.sha }),
+            });
+            return upd.ok ? { ok: true } : { error: "更新分支失败" };
+        } catch (e) {
+            return { error: "网络异常：" + e.message };
+        }
+    },
 };
 
 /* ============================================================
@@ -1125,6 +1176,41 @@ function pageGuestbook() {
 
 /* ---------- 启动 ---------- */
 Session.init();
+
+/* ---------- 背景音乐上传（站长） ---------- */
+(function initMusicUpload() {
+    const player = document.getElementById("musicPlayer");
+    if (!player) return;
+
+    const btn = document.createElement("button");
+    btn.className = "music-play";
+    btn.textContent = "⬆";
+    btn.title = "上传背景音乐（站长）";
+    player.insertBefore(btn, player.firstChild);
+
+    const picker = document.createElement("input");
+    picker.type = "file";
+    picker.accept = "audio/*";
+    picker.hidden = true;
+    document.body.appendChild(picker);
+
+    btn.addEventListener("click", () => {
+        if (!Session.ready) { Session.login(); return; }
+        picker.click();
+    });
+
+    picker.addEventListener("change", async () => {
+        const file = picker.files[0];
+        picker.value = "";
+        if (!file) return;
+        if (file.size > 30 * 1024 * 1024) { toast("文件太大（限 30MB）"); return; }
+        toast("正在上传音乐……");
+        const r = await Session.uploadBinary("assets/music/bgm.mp3", file, "🎵 更新背景音乐");
+        if (r.ok) toast("上传成功，约 1 分钟后全站生效");
+        else toast("上传失败：" + (r.error || "未知错误"));
+    });
+})();
+
 ({
     home: pageHome,
     blog: pageBlog,

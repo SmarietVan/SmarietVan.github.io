@@ -508,6 +508,13 @@ a:hover { text-decoration: underline; }
     .banner-owner { bottom: -30px; }
 }
 
+/* ---------- 移动端/触屏降级：砍掉昂贵特效 ---------- */
+@media (hover: none), (max-width: 860px) {
+    .banner-star { animation: none; filter: drop-shadow(0 0 18px rgba(255, 215, 94, .65)); }
+    .floater:nth-child(n+4) { display: none; }   /* 漂浮物减半 */
+    .floater { animation-duration: 25s !important; }
+}
+
 /* ============================================================
    子页通用（日志 / 相册 / 留言板）
    ============================================================ */
