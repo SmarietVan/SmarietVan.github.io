@@ -2,18 +2,7 @@
    QQ空间仿真风格 · 交互脚本
    ============================================================ */
 
-/* ---------- Giscus 留言板配置 ----------
-   部署后操作：
-   1. 在 GitHub 仓库设置里开启 Discussions
-   2. 安装 giscus App: https://github.com/apps/giscus
-   3. 打开 https://giscus.app/zh-CN 填写仓库信息，拿到 repoId 和 categoryId
-   4. 填入下面两项，留言板即自动启用                                    */
-const GISCUS_CONFIG = {
-    repo: "SmarietVan/SmarietVan.github.io",
-    repoId: "",          // ← 填 giscus.app 生成的 data-repo-id
-    category: "General",
-    categoryId: "",      // ← 填 giscus.app 生成的 data-category-id
-};
+/* ---------- Giscus 留言板已移除 ---------- */
 
 /* ---------- 皮肤切换（装扮） ---------- */
 (function initTheme() {
@@ -69,7 +58,6 @@ const GISCUS_CONFIG = {
         <a href="index.html">🏠 我的主页</a>
         <a href="blog.html">📝 日志</a>
         <a href="album.html">📷 相册</a>
-        <a href="guestbook.html">💬 留言板</a>
         <a href="music.html">🎵 音乐盒</a>
         <div class="mm-skins">
             <span>皮肤：</span>
@@ -130,30 +118,4 @@ const GISCUS_CONFIG = {
         document.body.appendChild(el);
         el.addEventListener("animationend", () => el.remove());
     });
-})();
-
-/* ---------- Giscus 留言板加载 ---------- */
-(function initGiscus() {
-    const container = document.getElementById("giscus-container");
-    if (!container) return;
-    if (!GISCUS_CONFIG.repoId || !GISCUS_CONFIG.categoryId) return;
-
-    const script = document.createElement("script");
-    script.src = "https://giscus.app/client.js";
-    script.async = true;
-    script.crossOrigin = "anonymous";
-    script.dataset.repo = GISCUS_CONFIG.repo;
-    script.dataset.repoId = GISCUS_CONFIG.repoId;
-    script.dataset.category = GISCUS_CONFIG.category;
-    script.dataset.categoryId = GISCUS_CONFIG.categoryId;
-    script.dataset.mapping = "pathname";
-    script.dataset.strict = "0";
-    script.dataset.reactionsEnabled = "1";
-    script.dataset.emitMetadata = "0";
-    script.dataset.inputPosition = "top";
-    script.dataset.theme = "preferred_color_scheme";
-    script.dataset.lang = "zh-CN";
-
-    container.innerHTML = "";
-    container.appendChild(script);
 })();

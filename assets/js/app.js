@@ -1,6 +1,6 @@
 /* ============================================================
    页面逻辑路由：根据 <body data-page="..."> 分发
-   依赖：store.js（Store）、qqzone.js（GISCUS_CONFIG）
+   依赖：store.js（Store）、qqzone.js
    ============================================================ */
 
 /* ---------- 站点配置 ---------- */
@@ -55,22 +55,6 @@ function modal(title, bodyHTML) {
 function getQuery(key) {
     return new URLSearchParams(location.search).get(key);
 }
-
-/* 点赞状态（本地记忆） */
-const Liked = {
-    get ids() {
-        try { return JSON.parse(localStorage.getItem("qqzone-liked") || "[]"); }
-        catch { return []; }
-    },
-    has(id) { return this.ids.includes(id); },
-    toggle(id) {
-        const ids = this.ids;
-        const i = ids.indexOf(id);
-        if (i >= 0) ids.splice(i, 1); else ids.push(id);
-        localStorage.setItem("qqzone-liked", JSON.stringify(ids));
-        return i < 0; // true = 现在已赞
-    },
-};
 
 const COMMENT_AVATARS = ["🐱", "🐶", "🦊", "🐼", "🐸", "🦁", "🐰", "🐨"];
 function avatarOf(name) {
@@ -376,6 +360,8 @@ const Player = {
         if (!btn || !nameEl) return;
 
         nameEl.textContent = this.tracks.length ? this.tracks[0].name : "暂无音乐";
+        const statMusic = document.getElementById("statMusic");
+        if (statMusic) statMusic.textContent = this.tracks.length;
 
         btn.addEventListener("click", () => this.toggle());
         nameEl.style.cursor = "pointer";
@@ -646,7 +632,6 @@ function metaOf(id) { return Store.getMeta(id); }
 async function pageHome() {
     const d = Store.data;
     document.getElementById("statAlbums").textContent = d.albums.filter((a) => !a.deleted).length;
-    document.getElementById("statMsgs").textContent = d.msgs.length;
 
     const feed = document.getElementById("feed");
     feed.innerHTML = `<section class="card"><div class="feed-empty">正在读取日志……</div></section>`;
@@ -660,8 +645,6 @@ async function pageHome() {
     }
 
     feed.innerHTML = posts.map((p) => {
-        const meta = metaOf(p.id);
-        const liked = Liked.has(p.id);
         const excerpt = esc(p.content.slice(0, 140)) + (p.content.length > 140 ? "……" : "");
         return `
         <article class="card post" data-id="${esc(p.id)}">
@@ -680,29 +663,16 @@ async function pageHome() {
             <div class="post-foot">
                 <span class="views">💬 评论需审核后显示</span>
                 <span class="actions">
-                    <button class="act like-btn ${liked ? "liked" : ""}">👍 <i>${meta.likes}</i></button>
                     <a class="act" href="post.html?id=${encodeURIComponent(p.id)}#comments" title="评论">💬</a>
                     <button class="act share-btn" title="分享">↗</button>
                 </span>
             </div>
-            <div class="like-list ${liked ? "" : "hidden"}">👍 <b>你</b> 觉得很赞</div>
             <a class="comment-box comment-entry" href="post.html?id=${encodeURIComponent(p.id)}#comments">💬 来评论区坐坐（GitHub 账号评论）</a>
         </article>`;
     }).join("");
 
     feed.querySelectorAll(".post").forEach((el) => {
         const id = el.dataset.id;
-        const meta = metaOf(id);
-
-        el.querySelector(".like-btn").addEventListener("click", (e) => {
-            const btn = e.currentTarget;
-            const liked = Liked.toggle(id);
-            meta.likes += liked ? 1 : -1;
-            Store.saveMeta();
-            btn.classList.toggle("liked", liked);
-            btn.querySelector("i").textContent = meta.likes;
-            el.querySelector(".like-list").classList.toggle("hidden", !liked);
-        });
 
         el.querySelector(".share-btn").addEventListener("click", () => {
             const url = location.origin + location.pathname.replace(/[^/]*$/, "") + "post.html?id=" + encodeURIComponent(id);
@@ -1181,7 +1151,6 @@ async function pagePost() {
     const loggedIn = isRepo ? await Session.check() : true;
 
     function render() {
-        const liked = Liked.has(id);
         const tools = loggedIn
             ? `<a href="editor.html?id=${encodeURIComponent(id)}">✏️ 编辑</a>
                <a id="pdDelete" style="color:#ff7a7a;cursor:pointer">🗑 删除</a>`
@@ -1197,12 +1166,6 @@ async function pagePost() {
             <div class="pd-tools">
                 ${tools}
                 <a href="blog.html">« 返回日志列表</a>
-            </div>
-            <div class="pd-foot">
-                <span></span>
-                <span class="actions">
-                    <button class="act like-btn ${liked ? "liked" : ""}" id="pdLike">👍 <i>${meta.likes}</i></button>
-                </span>
             </div>
             <div class="pd-comments" id="comments">
                 <div class="pd-comments-title">评论</div>
@@ -1235,15 +1198,6 @@ async function pagePost() {
         });
 
         renderMd(document.getElementById("pdContent"), post.content);
-
-        document.getElementById("pdLike").addEventListener("click", (e) => {
-            const likedNow = Liked.toggle(id);
-            meta.likes += likedNow ? 1 : -1;
-            Store.saveMeta();
-            const btn = e.currentTarget;
-            btn.classList.toggle("liked", likedNow);
-            btn.querySelector("i").textContent = meta.likes;
-        });
 
         const delBtn = document.getElementById("pdDelete");
         if (delBtn) {
@@ -1506,80 +1460,6 @@ function pageAlbumView() {
         }
     });
 
-    render();
-}
-
-/* ============================================================
-   留言板
-   ============================================================ */
-function pageGuestbook() {
-    const greetEl = document.getElementById("greetText");
-
-    function renderGreet() {
-        greetEl.textContent = Store.data.settings.greeting;
-    }
-
-    /* 留言板设置：编辑主人寄语 */
-    document.getElementById("gbSetting").addEventListener("click", () => {
-        const { mask } = modal("留言板设置", `
-            <label style="font-size:13px;color:var(--card-dim)">主人寄语</label>
-            <textarea id="greetInput" rows="3" style="margin-top:8px">${esc(Store.data.settings.greeting)}</textarea>
-            <div class="modal-actions" style="padding:14px 0 0;border:none">
-                <button class="btn-blue" id="greetOk">保存</button>
-            </div>`);
-        mask.querySelector("#greetOk").addEventListener("click", () => {
-            Store.data.settings.greeting = mask.querySelector("#greetInput").value.trim() || "欢迎光临！";
-            Store.save();
-            renderGreet();
-            toast("寄语已更新");
-            mask.remove();
-        });
-    });
-
-    document.getElementById("gbSign").addEventListener("click", () => toast("签名档功能暂未开放"));
-
-    /* Giscus 配置好了就用 Giscus，否则用本地留言 */
-    if (typeof GISCUS_CONFIG !== "undefined" && GISCUS_CONFIG.repoId && GISCUS_CONFIG.categoryId) {
-        document.getElementById("msgArea").style.display = "none";
-        document.getElementById("msgCount").textContent = "-";
-        return;
-    }
-    document.getElementById("giscus-container").remove();
-
-    const listEl = document.getElementById("msgList");
-
-    function render() {
-        const msgs = Store.data.msgs;
-        document.getElementById("msgCount").textContent = msgs.length;
-        if (!msgs.length) {
-            listEl.innerHTML = `<div class="empty-state">还没有人发表留言，来坐第一个沙发～</div>`;
-            return;
-        }
-        listEl.innerHTML = msgs.map((m, i) => {
-            const floor = i === 0 ? "沙发" : i === 1 ? "板凳" : `${msgs.length - i} 楼`;
-            return `
-            <li class="msg-item">
-                <span class="ci-avatar">${avatarOf(m.name)}</span>
-                <div class="ci-body">
-                    <span class="ci-name">${esc(m.name)}<span class="ci-time">${esc(m.time)}</span></span>
-                    <div class="ci-text">${esc(m.text)}</div>
-                    <div class="msg-floor">${floor}</div>
-                </div>
-            </li>`;
-        }).join("");
-    }
-
-    document.getElementById("msgSubmit").addEventListener("click", () => {
-        const name = document.getElementById("msgName").value.trim() || "匿名访客";
-        const text = document.getElementById("msgText").value.trim();
-        if (!text) { toast("留言内容不能为空"); return; }
-        Store.addMsg(name, text);
-        document.getElementById("msgText").value = "";
-        toast("留言成功，感谢不跑堂！");
-        render();
-    });
-
-    renderGreet();
     render();
 }
 
@@ -2033,7 +1913,6 @@ const App = {
             post: pagePost,
             album: pageAlbum,
             "album-view": pageAlbumView,
-            guestbook: pageGuestbook,
             admin: pageAdmin,
             music: pageMusic,
             settings: pageSettings,
