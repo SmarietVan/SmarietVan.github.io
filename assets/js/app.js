@@ -678,7 +678,7 @@ async function pageHome() {
             </div>
             <div class="post-source">📱 来自 GitHub Pages · 分类：${esc(p.cate)}</div>
             <div class="post-foot">
-                <span class="views">浏览${meta.views}次</span>
+                <span class="views">💬 评论需审核后显示</span>
                 <span class="actions">
                     <button class="act like-btn ${liked ? "liked" : ""}">👍 <i>${meta.likes}</i></button>
                     <a class="act" href="post.html?id=${encodeURIComponent(p.id)}#comments" title="评论">💬</a>
@@ -765,7 +765,6 @@ async function pageBlog() {
                 <div class="blog-entry-meta">
                     <span>${esc(p.time)}</span>
                     <span>分类：${esc(p.cate)}</span>
-                    <span>阅读 ${meta.views}</span>
                     ${ops}
                 </div>
             </li>`;
@@ -1177,8 +1176,6 @@ async function pagePost() {
 
     const isRepo = !!post.repo;
     const meta = metaOf(id);
-    meta.views++;
-    Store.saveMeta();
     document.title = post.title + " - SmarietVan的空间";
 
     const loggedIn = isRepo ? await Session.check() : true;
@@ -1194,8 +1191,7 @@ async function pagePost() {
             <div class="pd-meta">
                 <span>${esc(post.time)}</span>
                 <span>分类：${esc(post.cate)}</span>
-                <span>阅读 ${meta.views}</span>
-                <span>评论 ${meta.comments.length}</span>
+                <span>阅读 <span id="busuanzi_value_page_pv">--</span></span>
             </div>
             <div class="pd-content md-body" id="pdContent"></div>
             <div class="pd-tools">
@@ -1203,7 +1199,7 @@ async function pagePost() {
                 <a href="blog.html">« 返回日志列表</a>
             </div>
             <div class="pd-foot">
-                <span>浏览${meta.views}次</span>
+                <span></span>
                 <span class="actions">
                     <button class="act like-btn ${liked ? "liked" : ""}" id="pdLike">👍 <i>${meta.likes}</i></button>
                 </span>
@@ -1274,6 +1270,15 @@ async function pagePost() {
             });
         }
 
+    }
+
+    /* 真实阅读量：不蒜子页面级 PV（按 URL 计数，PJAX 跳转也注入计数） */
+    if (window.__bszForPost !== id) {
+        window.__bszForPost = id;
+        const s = document.createElement("script");
+        s.src = "//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js";
+        s.async = true;
+        document.body.appendChild(s);
     }
 
     render();
