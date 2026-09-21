@@ -501,6 +501,16 @@ const SiteCfg = {
                 document.body.style.background = `url("${c.pageBg.image}") center/cover fixed no-repeat`;
             }
         }
+        /* 正文行高 */
+        if (c.lineHeight) {
+            let st = document.getElementById("mdLhStyle");
+            if (!st) {
+                st = document.createElement("style");
+                st.id = "mdLhStyle";
+                document.head.appendChild(st);
+            }
+            st.textContent = `.md-body, .md-body li, .md-body li > p { line-height: ${c.lineHeight} !important; }`;
+        }
     },
 };
 
@@ -1829,6 +1839,14 @@ async function pageSettings() {
             <label class="set-label">个人档（每行一条，格式：emoji|内容）</label>
             <textarea id="setProfile" rows="5">${esc(profileText)}</textarea>
 
+            <label class="set-label">日志正文行高</label>
+            <select id="setLineHeight" class="ed-select" style="display:block">
+                <option value="1.5" ${c.lineHeight === "1.5" ? "selected" : ""}>紧凑（1.5）</option>
+                <option value="1.65" ${!c.lineHeight || c.lineHeight === "1.65" ? "selected" : ""}>标准（1.65）</option>
+                <option value="1.8" ${c.lineHeight === "1.8" ? "selected" : ""}>舒适（1.8）</option>
+                <option value="2" ${c.lineHeight === "2" ? "selected" : ""}>宽松（2.0）</option>
+            </select>
+
             ${["banner", "pageBg"].map((k) => {
                 const conf = c[k] || {};
                 const label = k === "banner" ? "顶部横幅背景" : "页面背景";
@@ -1877,6 +1895,7 @@ async function pageSettings() {
             spaceName: document.getElementById("setSpaceName").value.trim() || "SmarietVan的空间",
             ownerNick: document.getElementById("setNick").value.trim() || "SmarietVan",
             profile: document.getElementById("setProfile").value.split("\n").map((s) => s.trim()).filter(Boolean),
+            lineHeight: document.getElementById("setLineHeight").value,
             banner: { mode: box.querySelector('input[name=bannerMode]:checked').value, color: box.querySelectorAll(".set-color")[0].value, image: (c.banner && c.banner.image) || "" },
             pageBg: { mode: box.querySelector('input[name=pageBgMode]:checked').value, color: box.querySelectorAll(".set-color")[1].value, image: (c.pageBg && c.pageBg.image) || "" },
         };
