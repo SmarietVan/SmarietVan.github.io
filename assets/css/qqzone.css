@@ -1367,3 +1367,9 @@ a.stat span { color: var(--card-dim); }
 
 .md-body pre { position: relative; margin: 14px 0; }
 .md-body pre code { display: block; font-size: 13px; line-height: 1.7; }
+
+/* ---------- 行高收敛（修复列表"空行"观感） ---------- */
+.md-body { line-height: 1.8; }
+.md-body p { margin: 12px 0; }
+.md-body li { line-height: 1.65; margin: 4px 0; }
+.md-body li > p { margin: 3px 0; line-height: 1.65; }
