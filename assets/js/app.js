@@ -1086,6 +1086,33 @@ async function pageEditor() {
         setTimeout(() => (location.href = "blog.html"), 700);
     });
 
+    /* 代码块：把选中文本（或当前行）包进 ``` 围栏 */
+    function wrapSelection(before, after) {
+        const ta = contentEl;
+        const s = ta.selectionStart ?? ta.value.length;
+        const e = ta.selectionEnd ?? s;
+        ta.value = ta.value.slice(0, s) + before + ta.value.slice(s, e) + after + ta.value.slice(e);
+        ta.focus();
+        ta.selectionStart = s + before.length;
+        ta.selectionEnd = e + before.length;
+        if (!previewArea.classList.contains("hidden")) renderPreview();
+    }
+
+    document.getElementById("edCode").addEventListener("click", () => {
+        const ta = contentEl;
+        const s = ta.selectionStart ?? 0;
+        const e = ta.selectionEnd ?? s;
+        const sel = ta.value.slice(s, e) || "把代码 / 图示粘贴到这里";
+        ta.value = ta.value.slice(0, s) + "```\n" + sel + "\n```" + ta.value.slice(e);
+        ta.focus();
+        if (!previewArea.classList.contains("hidden")) renderPreview();
+        toast("已包上代码围栏");
+    });
+
+    document.getElementById("edTable").addEventListener("click", () => {
+        wrapSelection("\n\n| 列1 | 列2 | 列3 |\n| --- | --- | --- |\n|  |  |  |\n\n", "");
+    });
+
     document.getElementById("edCancel").addEventListener("click", () => history.back());
 
     /* 插入图片：编辑期只存本地并立刻可预览，发表时才随文章一起上传 */
