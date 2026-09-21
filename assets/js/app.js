@@ -272,9 +272,15 @@ async function fetchRepoJson(path) {
 }
 
 /* Markdown 渲染（marked 加载失败时自动重试，最终兜底纯文本） */
+function mdToHtml(md) {
+    return marked.parse(md, { breaks: true, gfm: true })
+        .replace(/<a href="(https?:[^"]+)"/g, '<a href="$1" target="_blank" rel="noopener"')
+        .replace(/<img /g, '<img loading="lazy" ');
+}
+
 function renderMd(el, md) {
     if (typeof marked !== "undefined") {
-        el.innerHTML = marked.parse(md, { breaks: true });
+        el.innerHTML = mdToHtml(md);
         return;
     }
     if (renderMd._loading) { renderMd._queue.push([el, md]); return; }
@@ -283,7 +289,7 @@ function renderMd(el, md) {
     const s = document.createElement("script");
     s.src = "assets/js/marked.min.js";
     s.onload = () => {
-        renderMd._queue.forEach(([e, m]) => { e.innerHTML = marked.parse(m, { breaks: true }); });
+        renderMd._queue.forEach(([e, m]) => { e.innerHTML = mdToHtml(m); });
         renderMd._loading = false;
         renderMd._queue = [];
     };
@@ -296,6 +302,25 @@ function renderMd(el, md) {
 }
 renderMd._loading = false;
 renderMd._queue = [];
+
+/* Markdown → 纯文本（摘要用，去掉格式符号） */
+function stripMd(s) {
+    return s
+        .replace(/!\[([^\]]*)\]\([^)]*\)/g, "[图片]")
+        .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+        .replace(/^#{1,6}\s+/gm, "")
+        .replace(/(\*\*|__)(.*?)\1/g, "$2")
+        .replace(/(\*|_)(.*?)\1/g, "$2")
+        .replace(/~~(.*?)~~/g, "$1")
+        .replace(/`{1,3}([^`]+)`{1,3}/g, "$1")
+        .replace(/^>\s?/gm, "")
+        .replace(/^[-*+]\s+/gm, "")
+        .replace(/^\d+\.\s+/gm, "")
+        .replace(/\|/g, " ")
+        .replace(/\n{2,}/g, " ")
+        .replace(/\n/g, " ")
+        .trim();
+}
 
 /* ============================================================
    音乐播放器（全局）：播放列表存仓库 data/music.json
@@ -645,7 +670,8 @@ async function pageHome() {
     }
 
     feed.innerHTML = posts.map((p) => {
-        const excerpt = esc(p.content.slice(0, 140)) + (p.content.length > 140 ? "……" : "");
+        const plain = stripMd(p.content);
+        const excerpt = esc(plain.slice(0, 140)) + (plain.length > 140 ? "……" : "");
         return `
         <article class="card post" data-id="${esc(p.id)}">
             <header class="post-head">
@@ -723,6 +749,7 @@ async function pageBlog() {
             return;
         }
         listEl.innerHTML = posts.map((p) => {
+            const plain = stripMd(p.content);
             const meta = metaOf(p.id);
             const ops = !isRepo || loggedIn
                 ? `<span><a href="editor.html?id=${encodeURIComponent(p.id)}">编辑</a></span>
@@ -731,7 +758,7 @@ async function pageBlog() {
             return `
             <li class="blog-entry">
                 <a class="blog-entry-title" href="post.html?id=${encodeURIComponent(p.id)}">${p.priv ? "🔒 " : ""}${esc(p.title)}</a>
-                <p class="blog-entry-summary">${esc(p.content.slice(0, 90))}${p.content.length > 90 ? "……" : ""}</p>
+                <p class="blog-entry-summary">${esc(plain.slice(0, 90))}${plain.length > 90 ? "……" : ""}</p>
                 <div class="blog-entry-meta">
                     <span>${esc(p.time)}</span>
                     <span>分类：${esc(p.cate)}</span>
@@ -1098,7 +1125,7 @@ async function pageEditor() {
         md = md.replace(/\(pending:([\w-]+)\)/g, (m, k) =>
             "(" + (pendingImages[k] ? pendingImages[k].dataURL : m) + ")");
         if (typeof marked !== "undefined") {
-            previewArea.innerHTML = marked.parse(md, { breaks: true });
+            previewArea.innerHTML = mdToHtml(md);
         } else {
             renderMd(previewArea, md);
         }
